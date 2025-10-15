@@ -1,11 +1,46 @@
-import type { Match, PlayerStats, SeasonSummary } from "../types";
+import type {
+  AuthResponse,
+  AuthUser,
+  FriendEntry,
+  FriendsResponse,
+  GroupInviteEntry,
+  GroupInvitesResponse,
+  GroupSummary,
+  GroupsResponse,
+  Match,
+  PlayerStats,
+  SeasonSummary
+} from "../types";
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+
+const resolveInput = (input: RequestInfo): RequestInfo => {
+  if (typeof input === "string" && input.startsWith("/") && API_BASE_URL) {
+    return `${API_BASE_URL}${input}`;
+  }
+  return input;
+};
+
+let authToken: string | null = null;
+
+export function setAuthToken(token: string | null) {
+  authToken = token;
+}
 
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, {
-    headers: {
-      "Content-Type": "application/json"
-    },
-    ...init
+  const headers = new Headers(init?.headers ?? undefined);
+
+  if (init?.body != null && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  if (authToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${authToken}`);
+  }
+
+  const response = await fetch(resolveInput(input), {
+    ...init,
+    headers
   });
 
   if (!response.ok) {
@@ -106,4 +141,75 @@ export type SeasonsResponse = {
 
 export function getSeasons(): Promise<SeasonsResponse> {
   return request<SeasonsResponse>("/api/seasons");
+}
+
+export function registerUser(payload: { username: string; email?: string; password: string }) {
+  return request<AuthResponse>("/auth/register", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function loginUser(payload: { username?: string; email?: string; password: string }) {
+  return request<AuthResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function getCurrentUser() {
+  return request<{ user: AuthUser }>("/auth/me");
+}
+
+export function getFriends() {
+  return request<FriendsResponse>("/api/friends");
+}
+
+export function sendFriendRequest(payload: { userId?: number; username?: string }) {
+  return request<{ friendship: FriendEntry }>("/api/friends/request", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function respondFriendRequest(payload: {
+  friendshipId: number;
+  action: "accept" | "decline" | "cancel";
+}) {
+  return request<{ friendship: FriendEntry } | void>("/api/friends/respond", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function getGroups() {
+  return request<GroupsResponse>("/api/groups");
+}
+
+export function createGroup(payload: { name: string }) {
+  return request<{ group: GroupSummary }>("/api/groups", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function getGroupInvites() {
+  return request<GroupInvitesResponse>("/api/groups/invites");
+}
+
+export function inviteToGroup(groupId: number, payload: { userId?: number; username?: string }) {
+  return request<{ invite: GroupInviteEntry }>(`/api/groups/${groupId}/invite`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function respondToGroupInvite(inviteId: number, action: "accept" | "decline" | "cancel") {
+  return request<{ invite: GroupInviteEntry } | void>(
+    `/api/groups/invites/${inviteId}/respond`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action })
+    }
+  );
 }

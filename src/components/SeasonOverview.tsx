@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { SeasonSummary } from "../types";
 
 type SeasonOverviewProps = {
@@ -11,6 +12,7 @@ const formatDate = (iso: string) =>
 const percentage = (value: number) => `${Math.round(value * 100)}%`;
 
 export function SeasonOverview({ seasons, currentSeasonId }: SeasonOverviewProps) {
+  const [previousExpanded, setPreviousExpanded] = useState(false);
   if (!seasons.length) {
     return (
       <section className="glass-card rounded-2xl border border-white/10 p-6 text-sm text-slate-400">
@@ -79,8 +81,22 @@ export function SeasonOverview({ seasons, currentSeasonId }: SeasonOverviewProps
 
       {previousSeasons.length ? (
         <div className="glass-card rounded-2xl border border-white/10 p-6">
-          <h4 className="text-lg font-semibold text-white">Vorige seizoenen</h4>
-          <ul className="mt-4 space-y-3 text-sm text-slate-200">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-lg font-semibold text-white">Vorige seizoenen</h4>
+            <button
+              type="button"
+              onClick={() => setPreviousExpanded((value) => !value)}
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:border-axoft-400 hover:text-axoft-200 focus:outline-none focus:ring-2 focus:ring-axoft-500/30 md:hidden"
+              aria-expanded={previousExpanded}
+            >
+              {previousExpanded ? "Verberg lijst" : "Toon lijst"}
+            </button>
+          </div>
+          <ul
+            className={`mt-4 space-y-3 text-sm text-slate-200 ${
+              previousExpanded ? "block" : "hidden md:block"
+            }`}
+          >
             {previousSeasons.map((season) => (
               <li
                 key={season.id}

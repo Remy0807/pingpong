@@ -47,3 +47,89 @@ model Season {
   champion   Player?  @relation("SeasonChampion", fields: [championId], references: [id])
   championId Int?
 }
+
+model User {
+  id                 Int             @id @default(autoincrement())
+  username           String          @unique
+  email              String?         @unique
+  passwordHash       String
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  sentFriendRequests Friendship[]    @relation("FriendshipRequester")
+  receivedRequests   Friendship[]    @relation("FriendshipAddressee")
+  ownedGroups        Group[]         @relation("GroupOwner")
+  memberships        GroupMember[]
+  sentGroupInvites   GroupInvite[]   @relation("GroupInviteInviter")
+  receivedInvites    GroupInvite[]   @relation("GroupInviteInvitee")
+}
+
+model Friendship {
+  id          Int              @id @default(autoincrement())
+  requester   User             @relation("FriendshipRequester", fields: [requesterId], references: [id])
+  requesterId Int
+  addressee   User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id])
+  addresseeId Int
+  status      FriendshipStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([requesterId, addresseeId])
+}
+
+model Group {
+  id        Int           @id @default(autoincrement())
+  name      String
+  owner     User          @relation("GroupOwner", fields: [ownerId], references: [id])
+  ownerId   Int
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  members   GroupMember[]
+  invites   GroupInvite[]
+}
+
+model GroupMember {
+  id        Int       @id @default(autoincrement())
+  group     Group     @relation(fields: [groupId], references: [id])
+  groupId   Int
+  user      User      @relation(fields: [userId], references: [id])
+  userId    Int
+  role      GroupRole @default(MEMBER)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([groupId, userId])
+}
+
+model GroupInvite {
+  id        Int                @id @default(autoincrement())
+  group     Group              @relation(fields: [groupId], references: [id])
+  groupId   Int
+  inviter   User               @relation("GroupInviteInviter", fields: [inviterId], references: [id])
+  inviterId Int
+  invitee   User               @relation("GroupInviteInvitee", fields: [inviteeId], references: [id])
+  inviteeId Int
+  status    GroupInviteStatus  @default(PENDING)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@unique([groupId, inviteeId])
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  BLOCKED
+}
+
+enum GroupRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum GroupInviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}

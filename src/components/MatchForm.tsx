@@ -57,11 +57,11 @@ export function MatchForm({
 }: MatchFormProps) {
   const [playerOneId, setPlayerOneId] = useState<number | null>(initialValues?.playerOneId ?? null);
   const [playerTwoId, setPlayerTwoId] = useState<number | null>(initialValues?.playerTwoId ?? null);
-  const [playerOnePoints, setPlayerOnePoints] = useState(
-    initialValues?.playerOnePoints ?? defaultPoints.playerOnePoints
+  const [playerOnePoints, setPlayerOnePoints] = useState<string>(
+    initialValues?.playerOnePoints?.toString() ?? defaultPoints.playerOnePoints.toString()
   );
-  const [playerTwoPoints, setPlayerTwoPoints] = useState(
-    initialValues?.playerTwoPoints ?? defaultPoints.playerTwoPoints
+  const [playerTwoPoints, setPlayerTwoPoints] = useState<string>(
+    initialValues?.playerTwoPoints?.toString() ?? defaultPoints.playerTwoPoints.toString()
   );
   const [playedAt, setPlayedAt] = useState<string>(
     toDateTimeLocal(initialValues?.playedAt ?? new Date())
@@ -74,8 +74,8 @@ export function MatchForm({
     }
     setPlayerOneId(initialValues.playerOneId);
     setPlayerTwoId(initialValues.playerTwoId);
-    setPlayerOnePoints(initialValues.playerOnePoints);
-    setPlayerTwoPoints(initialValues.playerTwoPoints);
+    setPlayerOnePoints(initialValues.playerOnePoints.toString());
+    setPlayerTwoPoints(initialValues.playerTwoPoints.toString());
     setPlayedAt(toDateTimeLocal(initialValues.playedAt));
   }, [initialValues]);
 
@@ -108,12 +108,25 @@ export function MatchForm({
       return;
     }
 
-    if (playerOnePoints === playerTwoPoints) {
+    if (!playerOnePoints || !playerTwoPoints) {
+      setError("Vul voor beide spelers een score in.");
+      return;
+    }
+
+    const playerOnePointsValue = Number(playerOnePoints);
+    const playerTwoPointsValue = Number(playerTwoPoints);
+
+    if (Number.isNaN(playerOnePointsValue) || Number.isNaN(playerTwoPointsValue)) {
+      setError("Scores moeten numeriek zijn.");
+      return;
+    }
+
+    if (playerOnePointsValue === playerTwoPointsValue) {
       setError("Een potje kan niet in een gelijkspel eindigen.");
       return;
     }
 
-    if (playerOnePoints < 0 || playerTwoPoints < 0) {
+    if (playerOnePointsValue < 0 || playerTwoPointsValue < 0) {
       setError("Scores kunnen niet negatief zijn.");
       return;
     }
@@ -123,16 +136,16 @@ export function MatchForm({
       await onSubmit({
         playerOneId,
         playerTwoId,
-        playerOnePoints,
-        playerTwoPoints,
+        playerOnePoints: playerOnePointsValue,
+        playerTwoPoints: playerTwoPointsValue,
         playedAt: playedAt ? new Date(playedAt).toISOString() : undefined
       });
 
       if (!initialValues) {
         setPlayerOneId(null);
         setPlayerTwoId(null);
-        setPlayerOnePoints(defaultPoints.playerOnePoints);
-        setPlayerTwoPoints(defaultPoints.playerTwoPoints);
+        setPlayerOnePoints(defaultPoints.playerOnePoints.toString());
+        setPlayerTwoPoints(defaultPoints.playerTwoPoints.toString());
         setPlayedAt(toDateTimeLocal(new Date()));
       }
     } catch (err) {
@@ -219,7 +232,10 @@ export function MatchForm({
             type="number"
             value={playerOnePoints}
             min={0}
-            onChange={(event) => setPlayerOnePoints(Number(event.target.value) || 0)}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            enterKeyHint="next"
+            onChange={(event) => setPlayerOnePoints(event.target.value)}
             className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
           />
         </div>
@@ -230,7 +246,10 @@ export function MatchForm({
             type="number"
             value={playerTwoPoints}
             min={0}
-            onChange={(event) => setPlayerTwoPoints(Number(event.target.value) || 0)}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            enterKeyHint="done"
+            onChange={(event) => setPlayerTwoPoints(event.target.value)}
             className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
           />
         </div>

@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 type ModalProps = {
   open: boolean;
   title?: string;
@@ -23,14 +25,28 @@ export function Modal({
   children,
   footer
 }: ModalProps) {
+  useEffect(() => {
+    if (!open || typeof document === "undefined") {
+      return;
+    }
+
+    const { body } = document;
+    const previousOverflow = body.style.overflow;
+    body.style.overflow = "hidden";
+
+    return () => {
+      body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   if (!open) {
     return null;
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur">
+    <div className="fixed inset-0 z-40 flex touch-pan-y items-start justify-center overflow-y-auto bg-slate-950/80 p-4 pt-16 backdrop-blur md:items-center md:pt-0">
       <div
-        className={`glass-card relative w-full ${sizeClassNames[size]} max-h-[90vh] overflow-hidden rounded-2xl border border-white/10 bg-slate-950/80 p-6 shadow-2xl`}
+        className={`glass-card relative w-full ${sizeClassNames[size]} h-full max-h-[calc(100vh-2rem)] overflow-hidden rounded-2xl border border-white/10 bg-slate-950/80 p-6 shadow-2xl supports-[height:100dvh]:h-[calc(100dvh-2rem)] supports-[height:100dvh]:max-h-[calc(100dvh-2rem)] md:h-auto md:max-h-[90vh]`}
       >
         <button
           type="button"
@@ -40,15 +56,21 @@ export function Modal({
         >
           X
         </button>
-        <div className="max-h-full overflow-y-auto pr-2">
-          {(title || description) && (
-            <header className="mb-5 pr-8">
-              {title ? <h2 className="text-2xl font-semibold text-white">{title}</h2> : null}
-              {description ? <p className="mt-2 text-sm text-slate-300">{description}</p> : null}
-            </header>
-          )}
-          <div className="space-y-4">{children}</div>
-          {footer ? <footer className="mt-6 flex justify-end gap-3">{footer}</footer> : null}
+        <div className="flex max-h-full min-h-0 flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto touch-pan-y pr-3 min-h-0">
+            {(title || description) && (
+              <header className="mb-5 pr-8">
+                {title ? <h2 className="text-2xl font-semibold text-white">{title}</h2> : null}
+                {description ? <p className="mt-2 text-sm text-slate-300">{description}</p> : null}
+              </header>
+            )}
+            <div className="space-y-4 pb-4">{children}</div>
+          </div>
+          {footer ? (
+            <footer className="mt-4 flex justify-end gap-3 border-t border-white/5 pt-4">
+              {footer}
+            </footer>
+          ) : null}
         </div>
       </div>
     </div>
