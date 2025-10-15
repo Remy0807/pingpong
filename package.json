@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "server:build": "tsx server/index.ts",
+    "build": "vite build && npm run server:build",
+    "server:build": "tsc -p tsconfig.server.json",
     "server:start": "node dist/server/index.js",
     "preview": "vite preview",
     "server:dev": "tsx watch server/index.ts",

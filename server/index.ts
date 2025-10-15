@@ -8,6 +8,17 @@ const app = express();
 const PORT = Number(process.env.PORT) || 4000;
 const TEAMS_WEBHOOK_URL = process.env.TEAMS_WEBHOOK_URL;
 
+type PrismaErrorWithCode = { code: string };
+
+const isPrismaErrorWithCode = (error: unknown): error is PrismaErrorWithCode => {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (error as { code: unknown }).code === "string"
+  );
+};
+
 app.use(cors());
 app.use(express.json());
 
@@ -735,13 +746,7 @@ app.post("/api/players", async (req, res, next) => {
 
     res.status(201).json(stats);
   } catch (error: unknown) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      // @ts-expect-error PrismaKnownClientError is not exported in ESM build
-      error.code === "P2002"
-    ) {
+    if (isPrismaErrorWithCode(error) && error.code === "P2002") {
       return res.status(409).json({ message: "Deze speler bestaat al." });
     }
     next(error);
@@ -794,22 +799,10 @@ app.patch("/api/players/:id", async (req, res, next) => {
 
     res.json(stats);
   } catch (error: unknown) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      // @ts-expect-error PrismaKnownClientError is not exported in ESM build
-      error.code === "P2025"
-    ) {
+    if (isPrismaErrorWithCode(error) && error.code === "P2025") {
       return res.status(404).json({ message: "Speler niet gevonden." });
     }
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      // @ts-expect-error PrismaKnownClientError is not exported in ESM build
-      error.code === "P2002"
-    ) {
+    if (isPrismaErrorWithCode(error) && error.code === "P2002") {
       return res.status(409).json({ message: "Deze speler bestaat al." });
     }
     next(error);
@@ -1045,13 +1038,7 @@ app.delete("/api/matches/:id", async (req, res, next) => {
 
     res.status(204).end();
   } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      // @ts-expect-error PrismaKnownClientError is not exported in ESM build
-      error.code === "P2025"
-    ) {
+    if (isPrismaErrorWithCode(error) && error.code === "P2025") {
       return res.status(404).json({ message: "Wedstrijd niet gevonden." });
     }
     next(error);
