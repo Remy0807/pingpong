@@ -1,5 +1,9 @@
 import "dotenv/config";
-import express, { type NextFunction, type Request, type Response } from "express";
+import express, {
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 import cors from "cors";
 import { PrismaClient, Prisma } from "@prisma/client";
 
@@ -10,7 +14,9 @@ const TEAMS_WEBHOOK_URL = process.env.TEAMS_WEBHOOK_URL;
 
 type PrismaErrorWithCode = { code: string };
 
-const isPrismaErrorWithCode = (error: unknown): error is PrismaErrorWithCode => {
+const isPrismaErrorWithCode = (
+  error: unknown
+): error is PrismaErrorWithCode => {
   return (
     typeof error === "object" &&
     error !== null &&
@@ -22,19 +28,28 @@ const isPrismaErrorWithCode = (error: unknown): error is PrismaErrorWithCode => 
 app.use(cors());
 app.use(express.json());
 
-type PlayerWithRelations = Awaited<ReturnType<typeof fetchPlayersWithRelations>>[number];
+type PlayerWithRelations = Awaited<
+  ReturnType<typeof fetchPlayersWithRelations>
+>[number];
 
 const getSeasonBoundaries = (date: Date) => {
   const start = new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
-  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+  const end = new Date(
+    date.getFullYear(),
+    date.getMonth() + 1,
+    0,
+    23,
+    59,
+    59,
+    999
+  );
   return { start, end };
 };
 
 const buildSeasonName = (date: Date) => {
-  return `${date.toLocaleString("nl-NL", { month: "long" })} ${date.getFullYear()}`.replace(
-    /^\w/,
-    (c) => c.toUpperCase()
-  );
+  return `${date.toLocaleString("nl-NL", {
+    month: "long",
+  })} ${date.getFullYear()}`.replace(/^\w/, (c) => c.toUpperCase());
 };
 
 async function getOrCreateSeasonForDate(date: Date) {
@@ -42,8 +57,8 @@ async function getOrCreateSeasonForDate(date: Date) {
   const existing = await prisma.season.findFirst({
     where: {
       startDate: { lte: date },
-      endDate: { gte: date }
-    }
+      endDate: { gte: date },
+    },
   });
 
   if (existing) {
@@ -54,8 +69,8 @@ async function getOrCreateSeasonForDate(date: Date) {
     data: {
       name: `Seizoen ${buildSeasonName(date)}`,
       startDate: start,
-      endDate: end
-    }
+      endDate: end,
+    },
   });
 }
 
@@ -64,9 +79,10 @@ const calculatePlayerEnhancements = (
   currentSeason: Awaited<ReturnType<typeof getOrCreateSeasonForDate>>,
   championCounts: Map<number, number>
 ) => {
-  const matches = [...player.matchesAsPlayerOne, ...player.matchesAsPlayerTwo].sort(
-    (a, b) => a.playedAt.getTime() - b.playedAt.getTime()
-  );
+  const matches = [
+    ...player.matchesAsPlayerOne,
+    ...player.matchesAsPlayerTwo,
+  ].sort((a, b) => a.playedAt.getTime() - b.playedAt.getTime());
 
   let currentStreak = 0;
   let longestStreak = 0;
@@ -93,9 +109,12 @@ const calculatePlayerEnhancements = (
 
   const seasonMatches = matches.filter(
     (match) =>
-      match.playedAt >= currentSeason.startDate && match.playedAt <= currentSeason.endDate
+      match.playedAt >= currentSeason.startDate &&
+      match.playedAt <= currentSeason.endDate
   );
-  const seasonWins = seasonMatches.filter((match) => match.winnerId === player.id).length;
+  const seasonWins = seasonMatches.filter(
+    (match) => match.winnerId === player.id
+  ).length;
   const seasonLosses = seasonMatches.length - seasonWins;
   const badges: string[] = [];
 
@@ -105,7 +124,10 @@ const calculatePlayerEnhancements = (
   if (seasonMatches.length >= 3 && seasonLosses === 0) {
     badges.push("Perfecte maand");
   }
-  if (seasonMatches.length >= 5 && seasonWins / (seasonMatches.length || 1) >= 0.75) {
+  if (
+    seasonMatches.length >= 5 &&
+    seasonWins / (seasonMatches.length || 1) >= 0.75
+  ) {
     badges.push("Dominantie");
   }
   if (seasonMatches.length >= 10) {
@@ -118,7 +140,13 @@ const calculatePlayerEnhancements = (
   const championships = championCounts.get(player.id) ?? 0;
   const justReachedStreakFive = currentStreak === 5;
 
-  return { badges, currentStreak, longestStreak, championships, justReachedStreakFive };
+  return {
+    badges,
+    currentStreak,
+    longestStreak,
+    championships,
+    justReachedStreakFive,
+  };
 };
 
 const buildPlayerStats = (
@@ -135,11 +163,15 @@ const buildPlayerStats = (
   const points = matches.reduce(
     (acc, match) => {
       const isPlayerOne = match.playerOneId === player.id;
-      const scored = isPlayerOne ? match.playerOnePoints : match.playerTwoPoints;
-      const conceded = isPlayerOne ? match.playerTwoPoints : match.playerOnePoints;
+      const scored = isPlayerOne
+        ? match.playerOnePoints
+        : match.playerTwoPoints;
+      const conceded = isPlayerOne
+        ? match.playerTwoPoints
+        : match.playerOnePoints;
       return {
         for: acc.for + scored,
-        against: acc.against + conceded
+        against: acc.against + conceded,
       };
     },
     { for: 0, against: 0 }
@@ -159,7 +191,7 @@ const buildPlayerStats = (
       id: player.id,
       name: player.name,
       createdAt: player.createdAt.toISOString(),
-      updatedAt: player.updatedAt.toISOString()
+      updatedAt: player.updatedAt.toISOString(),
     },
     wins,
     losses,
@@ -172,7 +204,7 @@ const buildPlayerStats = (
     currentStreak: enhancements.currentStreak,
     longestStreak: enhancements.longestStreak,
     championships: enhancements.championships,
-    justReachedStreakFive: enhancements.justReachedStreakFive
+    justReachedStreakFive: enhancements.justReachedStreakFive,
   };
 };
 
@@ -183,8 +215,8 @@ async function fetchPlayersWithRelations(playerId?: number) {
     include: {
       matchesAsPlayerOne: true,
       matchesAsPlayerTwo: true,
-      matchesWon: true
-    }
+      matchesWon: true,
+    },
   });
 }
 
@@ -192,22 +224,24 @@ const matchInclude = {
   playerOne: true,
   playerTwo: true,
   winner: true,
-  season: true
+  season: true,
 } as const;
 
-type MatchWithRelations = Prisma.MatchGetPayload<{ include: typeof matchInclude }>;
+type MatchWithRelations = Prisma.MatchGetPayload<{
+  include: typeof matchInclude;
+}>;
 
 const getChampionCounts = async () => {
   const championGroups = await prisma.season.groupBy({
     by: ["championId"],
     _count: {
-      championId: true
+      championId: true,
     },
     where: {
       championId: {
-        not: null
-      }
-    }
+        not: null,
+      },
+    },
   });
 
   const map = new Map<number, number>();
@@ -231,63 +265,128 @@ type SeasonStanding = {
   pointsFor: number;
   pointsAgainst: number;
   winRate: number;
+  // Elo rating for the season
+  rating: number;
   pointDifferential: number;
 };
 
-const calculateSeasonStandings = (matches: MatchWithRelations[]): SeasonStanding[] => {
-  const statsMap = new Map<number, Omit<SeasonStanding, "player" | "winRate" | "pointDifferential"> & {
-    player: { id: number; name: string };
-  }>();
+// Calculate season standings using an Elo rating system.
+// Each player starts at a base rating (1000). We process matches in chronological order
+// and update ratings after each match using a standard Elo formula with K=32.
+const calculateSeasonStandings = (
+  matches: MatchWithRelations[]
+): SeasonStanding[] => {
+  // Build initial stats map and rating map
+  const statsMap = new Map<
+    number,
+    {
+      player: { id: number; name: string };
+      wins: number;
+      losses: number;
+      matches: number;
+      pointsFor: number;
+      pointsAgainst: number;
+      rating: number;
+    }
+  >();
 
+  const BASE_RATING = 1000;
+  const K = 32;
+
+  // Ensure we have an entry for all players that appear in matches
   for (const match of matches) {
-    const players = [
-      { record: match.playerOne, scored: match.playerOnePoints, conceded: match.playerTwoPoints },
-      { record: match.playerTwo, scored: match.playerTwoPoints, conceded: match.playerOnePoints }
-    ];
-
-    players.forEach(({ record, scored, conceded }) => {
-      const existing =
-        statsMap.get(record.id) ??
-        {
-          player: { id: record.id, name: record.name },
-          wins: 0,
-          losses: 0,
-          matches: 0,
-          pointsFor: 0,
-          pointsAgainst: 0
-        };
-      existing.matches += 1;
-      existing.pointsFor += scored;
-      existing.pointsAgainst += conceded;
-      if (match.winnerId === record.id) {
-        existing.wins += 1;
-      } else {
-        existing.losses += 1;
-      }
-      statsMap.set(record.id, existing);
-    });
+    const p1 = match.playerOne;
+    const p2 = match.playerTwo;
+    if (!statsMap.has(p1.id)) {
+      statsMap.set(p1.id, {
+        player: { id: p1.id, name: p1.name },
+        wins: 0,
+        losses: 0,
+        matches: 0,
+        pointsFor: 0,
+        pointsAgainst: 0,
+        rating: BASE_RATING,
+      });
+    }
+    if (!statsMap.has(p2.id)) {
+      statsMap.set(p2.id, {
+        player: { id: p2.id, name: p2.name },
+        wins: 0,
+        losses: 0,
+        matches: 0,
+        pointsFor: 0,
+        pointsAgainst: 0,
+        rating: BASE_RATING,
+      });
+    }
   }
 
-  return Array.from(statsMap.values())
-    .map((entry) => ({
-      player: entry.player,
-      wins: entry.wins,
-      losses: entry.losses,
-      matches: entry.matches,
-      pointsFor: entry.pointsFor,
-      pointsAgainst: entry.pointsAgainst,
-      winRate: entry.matches ? entry.wins / entry.matches : 0,
-      pointDifferential: entry.pointsFor - entry.pointsAgainst
-    }))
-    .sort((a, b) => {
-      if (b.winRate === a.winRate) {
-        if (b.pointDifferential === a.pointDifferential) {
-          return b.matches - a.matches;
-        }
-        return b.pointDifferential - a.pointDifferential;
+  // Process matches in chronological order and update ratings
+  const sortedMatches = [...matches].sort(
+    (a, b) => a.playedAt.getTime() - b.playedAt.getTime()
+  );
+
+  for (const match of sortedMatches) {
+    const entryOne = statsMap.get(match.playerOneId)!;
+    const entryTwo = statsMap.get(match.playerTwoId)!;
+
+    // Update per-match aggregated stats
+    entryOne.matches += 1;
+    entryTwo.matches += 1;
+    entryOne.pointsFor += match.playerOnePoints;
+    entryOne.pointsAgainst += match.playerTwoPoints;
+    entryTwo.pointsFor += match.playerTwoPoints;
+    entryTwo.pointsAgainst += match.playerOnePoints;
+
+    const Ra = entryOne.rating;
+    const Rb = entryTwo.rating;
+    const Ea = 1 / (1 + 10 ** ((Rb - Ra) / 400));
+    const Eb = 1 - Ea;
+
+    let Sa: number;
+    let Sb: number;
+    if (match.winnerId === match.playerOneId) {
+      Sa = 1;
+      Sb = 0;
+      entryOne.wins += 1;
+      entryTwo.losses += 1;
+    } else {
+      Sa = 0;
+      Sb = 1;
+      entryTwo.wins += 1;
+      entryOne.losses += 1;
+    }
+
+    // Elo update
+    entryOne.rating = Math.round(Ra + K * (Sa - Ea));
+    entryTwo.rating = Math.round(Rb + K * (Sb - Eb));
+  }
+
+  // Convert to SeasonStanding array
+  const standings = Array.from(statsMap.values()).map((entry) => ({
+    player: entry.player,
+    wins: entry.wins,
+    losses: entry.losses,
+    matches: entry.matches,
+    pointsFor: entry.pointsFor,
+    pointsAgainst: entry.pointsAgainst,
+    winRate: entry.matches ? entry.wins / entry.matches : 0,
+    rating: entry.rating,
+    pointDifferential: entry.pointsFor - entry.pointsAgainst,
+  }));
+
+  // Sort by rating (desc), then by point differential, then by matches played
+  standings.sort((a, b) => {
+    if (b.rating === a.rating) {
+      if (b.pointDifferential === a.pointDifferential) {
+        return b.matches - a.matches;
       }
-      return b.winRate - a.winRate;
-    });
+      return b.pointDifferential - a.pointDifferential;
+    }
+    return b.rating - a.rating;
+  });
+
+  return standings;
 };
 
 const ensurePastSeasonChampions = async () => {
@@ -296,9 +395,9 @@ const ensurePastSeasonChampions = async () => {
     where: { endDate: { lt: now } },
     include: {
       matches: {
-        include: matchInclude
-      }
-    }
+        include: matchInclude,
+      },
+    },
   });
 
   await Promise.all(
@@ -313,7 +412,7 @@ const ensurePastSeasonChampions = async () => {
       }
       await prisma.season.update({
         where: { id: season.id },
-        data: { championId }
+        data: { championId },
       });
     })
   );
@@ -323,11 +422,13 @@ const getLeaderboardSnapshot = async () => {
   const [players, currentSeason, championCounts] = await Promise.all([
     fetchPlayersWithRelations(),
     getOrCreateSeasonForDate(new Date()),
-    getChampionCounts()
+    getChampionCounts(),
   ]);
 
   return players
-    .map((player) => buildPlayerStats(player, { currentSeason, championCounts }))
+    .map((player) =>
+      buildPlayerStats(player, { currentSeason, championCounts })
+    )
     .sort((a, b) => {
       if (b.winRate === a.winRate) {
         return b.pointDifferential - a.pointDifferential;
@@ -341,7 +442,7 @@ const buildAdaptiveCard = (body: unknown[], actions: unknown[] = []) => ({
   type: "AdaptiveCard",
   version: "1.4",
   body,
-  actions
+  actions,
 });
 
 const sendTeamsCard = async (cardContent: unknown) => {
@@ -354,21 +455,25 @@ const sendTeamsCard = async (cardContent: unknown) => {
     attachments: [
       {
         contentType: "application/vnd.microsoft.card.adaptive",
-        content: cardContent
-      }
-    ]
+        content: cardContent,
+      },
+    ],
   };
 
   const response = await fetch(TEAMS_WEBHOOK_URL, {
     method: "POST",
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
-    console.error("Teams webhook responded with", response.status, await response.text());
+    console.error(
+      "Teams webhook responded with",
+      response.status,
+      await response.text()
+    );
   }
 };
 
@@ -380,7 +485,7 @@ const notifyTeamsMatchCreated = async (match: MatchWithRelations) => {
         type: "TextBlock",
         text: "Nieuwe wedstrijd geregistreerd",
         weight: "Bolder",
-        size: "Large"
+        size: "Large",
       },
       {
         type: "ColumnSet",
@@ -394,21 +499,21 @@ const notifyTeamsMatchCreated = async (match: MatchWithRelations) => {
                 text: `${match.playerOne.name} vs ${match.playerTwo.name}`,
                 weight: "Bolder",
                 size: "Medium",
-                wrap: true
+                wrap: true,
               },
               {
                 type: "TextBlock",
                 text: `Seizoen: ${match.season?.name ?? "Onbekend"}`,
                 isSubtle: true,
                 spacing: "Small",
-                wrap: true
+                wrap: true,
               },
               {
                 type: "TextBlock",
                 text: `Winnaar: ${match.winner.name}`,
-                wrap: true
-              }
-            ]
+                wrap: true,
+              },
+            ],
           },
           {
             type: "Column",
@@ -418,20 +523,20 @@ const notifyTeamsMatchCreated = async (match: MatchWithRelations) => {
                 type: "TextBlock",
                 text: "Score",
                 weight: "Bolder",
-                horizontalAlignment: "Center"
+                horizontalAlignment: "Center",
               },
               {
                 type: "TextBlock",
                 text: `${match.playerOnePoints} - ${match.playerTwoPoints}`,
                 size: "ExtraLarge",
                 weight: "Bolder",
-                horizontalAlignment: "Center"
-              }
+                horizontalAlignment: "Center",
+              },
             ],
-            verticalContentAlignment: "Center"
-          }
-        ]
-      }
+            verticalContentAlignment: "Center",
+          },
+        ],
+      },
     ];
 
     const topFive = leaderboard.slice(0, 5);
@@ -440,51 +545,60 @@ const notifyTeamsMatchCreated = async (match: MatchWithRelations) => {
         type: "TextBlock",
         text: "Actuele top 5",
         weight: "Bolder",
-        spacing: "Medium"
+        spacing: "Medium",
       });
       body.push({
         type: "FactSet",
         facts: topFive.map((entry, index) => {
-          const winPercentage = entry.winRate ? Math.round(entry.winRate * 100) : 0;
+          const winPercentage = entry.winRate
+            ? Math.round(entry.winRate * 100)
+            : 0;
           return {
             title: `${index + 1}. ${entry.player.name}`,
-            value: `${entry.wins}W/${entry.losses}L (${winPercentage}%)`
+            value: `${entry.wins}W/${entry.losses}L (${winPercentage}%)`,
           };
-        })
+        }),
       });
     }
 
-    const badgeHolders = leaderboard.filter((entry) => entry.badges.length > 0).slice(0, 3);
+    const badgeHolders = leaderboard
+      .filter((entry) => entry.badges.length > 0)
+      .slice(0, 3);
     if (badgeHolders.length) {
       body.push({
         type: "TextBlock",
         text: "Spelers in vorm",
         weight: "Bolder",
-        spacing: "Medium"
+        spacing: "Medium",
       });
       body.push({
         type: "TextBlock",
         text: badgeHolders
           .map((entry) => `${entry.player.name}: ${entry.badges.join(", ")}`)
           .join("\n"),
-        wrap: true
+        wrap: true,
       });
     }
 
-    const streakMilestones = leaderboard.filter((entry) => entry.justReachedStreakFive);
+    const streakMilestones = leaderboard.filter(
+      (entry) => entry.justReachedStreakFive
+    );
     if (streakMilestones.length) {
       body.push({
         type: "TextBlock",
         text: "Streak alert",
         weight: "Bolder",
-        spacing: "Medium"
+        spacing: "Medium",
       });
       body.push({
         type: "TextBlock",
         text: streakMilestones
-          .map((entry) => `${entry.player.name} staat op een winstreak van ${entry.currentStreak}!`)
+          .map(
+            (entry) =>
+              `${entry.player.name} staat op een winstreak van ${entry.currentStreak}!`
+          )
           .join("\n"),
-        wrap: true
+        wrap: true,
       });
     }
 
@@ -510,7 +624,7 @@ const notifyTeamsPlayerChange = async (payload: {
             ? "Speler bijgewerkt"
             : "Speler verwijderd",
         weight: "Bolder",
-        size: "Medium"
+        size: "Medium",
       },
       {
         type: "TextBlock",
@@ -520,8 +634,8 @@ const notifyTeamsPlayerChange = async (payload: {
             : payload.type === "updated"
             ? `${payload.previousName ?? payload.name} heet nu ${payload.name}.`
             : `${payload.name} is uit de competitie verwijderd.`,
-        wrap: true
-      }
+        wrap: true,
+      },
     ];
 
     await sendTeamsCard(buildAdaptiveCard(body));
@@ -538,31 +652,31 @@ const notifyTeamsMatchUpdated = async (match: MatchWithRelations) => {
         type: "TextBlock",
         text: "Wedstrijd bijgewerkt",
         weight: "Bolder",
-        size: "Large"
+        size: "Large",
       },
       {
         type: "TextBlock",
         text: `${match.playerOne.name} vs ${match.playerTwo.name}`,
         weight: "Bolder",
         size: "Medium",
-        wrap: true
+        wrap: true,
       },
       {
         type: "TextBlock",
         text: `Score: ${match.playerOnePoints}-${match.playerTwoPoints}`,
-        wrap: true
+        wrap: true,
       },
       {
         type: "TextBlock",
         text: `Winnaar: ${match.winner.name}`,
-        wrap: true
+        wrap: true,
       },
       {
         type: "TextBlock",
         text: `Seizoen: ${match.season?.name ?? "Onbekend"}`,
         isSubtle: true,
-        wrap: true
-      }
+        wrap: true,
+      },
     ];
 
     const topThree = leaderboard.slice(0, 3);
@@ -571,34 +685,41 @@ const notifyTeamsMatchUpdated = async (match: MatchWithRelations) => {
         type: "TextBlock",
         text: "Top 3 na wijziging",
         weight: "Bolder",
-        spacing: "Medium"
+        spacing: "Medium",
       });
       body.push({
         type: "FactSet",
         facts: topThree.map((entry, index) => {
-          const winPercentage = entry.winRate ? Math.round(entry.winRate * 100) : 0;
+          const winPercentage = entry.winRate
+            ? Math.round(entry.winRate * 100)
+            : 0;
           return {
             title: `${index + 1}. ${entry.player.name}`,
-            value: `${entry.wins}W/${entry.losses}L (${winPercentage}%)`
+            value: `${entry.wins}W/${entry.losses}L (${winPercentage}%)`,
           };
-        })
+        }),
       });
     }
 
-    const streakMilestones = leaderboard.filter((entry) => entry.justReachedStreakFive);
+    const streakMilestones = leaderboard.filter(
+      (entry) => entry.justReachedStreakFive
+    );
     if (streakMilestones.length) {
       body.push({
         type: "TextBlock",
         text: "Streak alert",
         weight: "Bolder",
-        spacing: "Medium"
+        spacing: "Medium",
       });
       body.push({
         type: "TextBlock",
         text: streakMilestones
-          .map((entry) => `${entry.player.name} staat op een winstreak van ${entry.currentStreak}!`)
+          .map(
+            (entry) =>
+              `${entry.player.name} staat op een winstreak van ${entry.currentStreak}!`
+          )
           .join("\n"),
-        wrap: true
+        wrap: true,
       });
     }
 
@@ -616,25 +737,25 @@ const notifyTeamsMatchDeleted = async (match: MatchWithRelations) => {
         type: "TextBlock",
         text: "Wedstrijd verwijderd",
         weight: "Bolder",
-        size: "Large"
+        size: "Large",
       },
       {
         type: "TextBlock",
         text: `${match.playerOne.name} vs ${match.playerTwo.name}`,
         weight: "Bolder",
         size: "Medium",
-        wrap: true
+        wrap: true,
       },
       {
         type: "TextBlock",
         text: `Score was: ${match.playerOnePoints}-${match.playerTwoPoints}`,
-        wrap: true
+        wrap: true,
       },
       {
         type: "TextBlock",
         text: `Winnaar was: ${match.winner.name}`,
-        wrap: true
-      }
+        wrap: true,
+      },
     ];
 
     const topThree = leaderboard.slice(0, 3);
@@ -643,17 +764,19 @@ const notifyTeamsMatchDeleted = async (match: MatchWithRelations) => {
         type: "TextBlock",
         text: "Top 3 na verwijdering",
         weight: "Bolder",
-        spacing: "Medium"
+        spacing: "Medium",
       });
       body.push({
         type: "FactSet",
         facts: topThree.map((entry, index) => {
-          const winPercentage = entry.winRate ? Math.round(entry.winRate * 100) : 0;
+          const winPercentage = entry.winRate
+            ? Math.round(entry.winRate * 100)
+            : 0;
           return {
             title: `${index + 1}. ${entry.player.name}`,
-            value: `${entry.wins}W/${entry.losses}L (${winPercentage}%)`
+            value: `${entry.wins}W/${entry.losses}L (${winPercentage}%)`,
           };
-        })
+        }),
       });
     }
 
@@ -669,29 +792,91 @@ const serializeMatch = (match: MatchWithRelations) => ({
   playerOne: {
     ...match.playerOne,
     createdAt: match.playerOne.createdAt.toISOString(),
-    updatedAt: match.playerOne.updatedAt.toISOString()
+    updatedAt: match.playerOne.updatedAt.toISOString(),
   },
   playerTwo: {
     ...match.playerTwo,
     createdAt: match.playerTwo.createdAt.toISOString(),
-    updatedAt: match.playerTwo.updatedAt.toISOString()
+    updatedAt: match.playerTwo.updatedAt.toISOString(),
   },
   winner: {
     ...match.winner,
     createdAt: match.winner.createdAt.toISOString(),
-    updatedAt: match.winner.updatedAt.toISOString()
+    updatedAt: match.winner.updatedAt.toISOString(),
   },
   season: match.season
     ? {
         id: match.season.id,
         name: match.season.name,
         startDate: match.season.startDate.toISOString(),
-        endDate: match.season.endDate.toISOString()
+        endDate: match.season.endDate.toISOString(),
       }
     : null,
   createdAt: match.createdAt.toISOString(),
-  updatedAt: match.updatedAt.toISOString()
+  updatedAt: match.updatedAt.toISOString(),
 });
+
+// Helper to compute Elo deltas per match grouped by season
+const computeEloDeltas = (matches: MatchWithRelations[]) => {
+  const BASE_RATING = 1000;
+  const K = 32;
+  const deltas = new Map<
+    number,
+    { playerOneDelta: number; playerTwoDelta: number }
+  >();
+
+  // Group matches by season id
+  const bySeason = new Map<number, MatchWithRelations[]>();
+  for (const m of matches) {
+    const sid = m.season ? m.season.id : 0;
+    const arr = bySeason.get(sid) ?? [];
+    arr.push(m);
+    bySeason.set(sid, arr);
+  }
+
+  for (const [_sid, seasonMatches] of bySeason.entries()) {
+    // sort chronological
+    const sorted = [...seasonMatches].sort(
+      (a, b) => a.playedAt.getTime() - b.playedAt.getTime()
+    );
+
+    const ratingMap = new Map<number, number>();
+
+    for (const match of sorted) {
+      // init ratings
+      if (!ratingMap.has(match.playerOneId))
+        ratingMap.set(match.playerOneId, BASE_RATING);
+      if (!ratingMap.has(match.playerTwoId))
+        ratingMap.set(match.playerTwoId, BASE_RATING);
+
+      const Ra = ratingMap.get(match.playerOneId)!;
+      const Rb = ratingMap.get(match.playerTwoId)!;
+      const Ea = 1 / (1 + 10 ** ((Rb - Ra) / 400));
+      const Eb = 1 - Ea;
+
+      let Sa = 0;
+      let Sb = 0;
+      if (match.winnerId === match.playerOneId) {
+        Sa = 1;
+        Sb = 0;
+      } else {
+        Sa = 0;
+        Sb = 1;
+      }
+
+      const deltaA = Math.round(K * (Sa - Ea));
+      const deltaB = Math.round(K * (Sb - Eb));
+
+      // apply
+      ratingMap.set(match.playerOneId, Ra + deltaA);
+      ratingMap.set(match.playerTwoId, Rb + deltaB);
+
+      deltas.set(match.id, { playerOneDelta: deltaA, playerTwoDelta: deltaB });
+    }
+  }
+
+  return deltas;
+};
 
 app.get("/healthz", (_req, res) => {
   res.json({ ok: true });
@@ -703,7 +888,7 @@ app.get("/api/players", async (_req, res, next) => {
     const [players, currentSeason, championCounts] = await Promise.all([
       fetchPlayersWithRelations(),
       getOrCreateSeasonForDate(new Date()),
-      getChampionCounts()
+      getChampionCounts(),
     ]);
     res.json(
       players.map((player) =>
@@ -724,25 +909,33 @@ app.post("/api/players", async (req, res, next) => {
 
   try {
     const player = await prisma.player.create({
-      data: { name: name.trim() }
+      data: { name: name.trim() },
     });
 
-    const [playerWithRelations, currentSeason, championCounts] = await Promise.all([
-      fetchPlayersWithRelations(player.id),
-      getOrCreateSeasonForDate(new Date()),
-      getChampionCounts()
-    ]);
+    const [playerWithRelations, currentSeason, championCounts] =
+      await Promise.all([
+        fetchPlayersWithRelations(player.id),
+        getOrCreateSeasonForDate(new Date()),
+        getChampionCounts(),
+      ]);
 
     const statsSource = playerWithRelations[0];
     if (!statsSource) {
-      return res.status(500).json({ message: "Kon spelerstatistieken niet opbouwen." });
+      return res
+        .status(500)
+        .json({ message: "Kon spelerstatistieken niet opbouwen." });
     }
 
-    const stats = buildPlayerStats(statsSource, { currentSeason, championCounts });
-
-    notifyTeamsPlayerChange({ type: "created", name: player.name }).catch((error) => {
-      console.error("Teams notificatie mislukt", error);
+    const stats = buildPlayerStats(statsSource, {
+      currentSeason,
+      championCounts,
     });
+
+    notifyTeamsPlayerChange({ type: "created", name: player.name }).catch(
+      (error) => {
+        console.error("Teams notificatie mislukt", error);
+      }
+    );
 
     res.status(201).json(stats);
   } catch (error: unknown) {
@@ -765,7 +958,9 @@ app.patch("/api/players/:id", async (req, res, next) => {
   }
 
   try {
-    const existingPlayer = await prisma.player.findUnique({ where: { id: playerId } });
+    const existingPlayer = await prisma.player.findUnique({
+      where: { id: playerId },
+    });
 
     if (!existingPlayer) {
       return res.status(404).json({ message: "Speler niet gevonden." });
@@ -773,26 +968,30 @@ app.patch("/api/players/:id", async (req, res, next) => {
 
     const updatedPlayer = await prisma.player.update({
       where: { id: playerId },
-      data: { name: name.trim() }
+      data: { name: name.trim() },
     });
 
-    const [playerWithRelations, currentSeason, championCounts] = await Promise.all([
-      fetchPlayersWithRelations(playerId),
-      getOrCreateSeasonForDate(new Date()),
-      getChampionCounts()
-    ]);
+    const [playerWithRelations, currentSeason, championCounts] =
+      await Promise.all([
+        fetchPlayersWithRelations(playerId),
+        getOrCreateSeasonForDate(new Date()),
+        getChampionCounts(),
+      ]);
 
     const statsSource = playerWithRelations[0];
     if (!statsSource) {
       return res.status(404).json({ message: "Speler niet gevonden." });
     }
 
-    const stats = buildPlayerStats(statsSource, { currentSeason, championCounts });
+    const stats = buildPlayerStats(statsSource, {
+      currentSeason,
+      championCounts,
+    });
 
     notifyTeamsPlayerChange({
       type: "updated",
       name: updatedPlayer.name,
-      previousName: existingPlayer.name
+      previousName: existingPlayer.name,
     }).catch((error) => {
       console.error("Teams notificatie mislukt", error);
     });
@@ -817,7 +1016,7 @@ app.delete("/api/players/:id", async (req, res, next) => {
 
   try {
     const player = await prisma.player.findUnique({
-      where: { id: playerId }
+      where: { id: playerId },
     });
 
     if (!player) {
@@ -827,15 +1026,17 @@ app.delete("/api/players/:id", async (req, res, next) => {
     await prisma.$transaction([
       prisma.match.deleteMany({
         where: {
-          OR: [{ playerOneId: playerId }, { playerTwoId: playerId }]
-        }
+          OR: [{ playerOneId: playerId }, { playerTwoId: playerId }],
+        },
       }),
-      prisma.player.delete({ where: { id: playerId } })
+      prisma.player.delete({ where: { id: playerId } }),
     ]);
 
-    notifyTeamsPlayerChange({ type: "deleted", name: player.name }).catch((error) => {
-      console.error("Teams notificatie mislukt", error);
-    });
+    notifyTeamsPlayerChange({ type: "deleted", name: player.name }).catch(
+      (error) => {
+        console.error("Teams notificatie mislukt", error);
+      }
+    );
 
     res.status(204).end();
   } catch (error) {
@@ -847,7 +1048,7 @@ app.get("/api/matches", async (_req, res, next) => {
   try {
     const matches = await prisma.match.findMany({
       orderBy: { playedAt: "desc" },
-      include: matchInclude
+      include: matchInclude,
     });
 
     const corrected = await Promise.all(
@@ -859,19 +1060,36 @@ app.get("/api/matches", async (_req, res, next) => {
         return prisma.match.update({
           where: { id: match.id },
           data: { seasonId: season.id },
-          include: matchInclude
+          include: matchInclude,
         });
       })
     );
 
-    res.json(corrected.map(serializeMatch));
+    // Compute Elo deltas per match (per season)
+    const deltas = computeEloDeltas(corrected);
+
+    const serialized = corrected.map((m) => {
+      const base = serializeMatch(m) as any;
+      const d = deltas.get(m.id) ?? { playerOneDelta: 0, playerTwoDelta: 0 };
+      base.playerOneEloDelta = d.playerOneDelta;
+      base.playerTwoEloDelta = d.playerTwoDelta;
+      return base;
+    });
+
+    res.json(serialized);
   } catch (error) {
     next(error);
   }
 });
 
 app.post("/api/matches", async (req, res, next) => {
-  const { playerOneId, playerTwoId, playerOnePoints, playerTwoPoints, playedAt } = req.body ?? {};
+  const {
+    playerOneId,
+    playerTwoId,
+    playerOnePoints,
+    playerTwoPoints,
+    playedAt,
+  } = req.body ?? {};
 
   if (
     typeof playerOneId !== "number" ||
@@ -883,21 +1101,27 @@ app.post("/api/matches", async (req, res, next) => {
   }
 
   if (playerOneId === playerTwoId) {
-    return res.status(400).json({ message: "Een speler kan niet tegen zichzelf spelen." });
+    return res
+      .status(400)
+      .json({ message: "Een speler kan niet tegen zichzelf spelen." });
   }
 
   if (playerOnePoints === playerTwoPoints) {
-    return res.status(400).json({ message: "Een potje eindigt altijd met een winnaar." });
+    return res
+      .status(400)
+      .json({ message: "Een potje eindigt altijd met een winnaar." });
   }
 
   if (playerOnePoints < 0 || playerTwoPoints < 0) {
-    return res.status(400).json({ message: "Scores kunnen niet negatief zijn." });
+    return res
+      .status(400)
+      .json({ message: "Scores kunnen niet negatief zijn." });
   }
 
   try {
     const [playerOne, playerTwo] = await Promise.all([
       prisma.player.findUnique({ where: { id: playerOneId } }),
-      prisma.player.findUnique({ where: { id: playerTwoId } })
+      prisma.player.findUnique({ where: { id: playerTwoId } }),
     ]);
 
     if (!playerOne || !playerTwo) {
@@ -906,7 +1130,8 @@ app.post("/api/matches", async (req, res, next) => {
 
     const playedDate = playedAt ? new Date(playedAt) : new Date();
     const season = await getOrCreateSeasonForDate(playedDate);
-    const winnerId = playerOnePoints > playerTwoPoints ? playerOneId : playerTwoId;
+    const winnerId =
+      playerOnePoints > playerTwoPoints ? playerOneId : playerTwoId;
 
     const match = await prisma.match.create({
       data: {
@@ -916,9 +1141,9 @@ app.post("/api/matches", async (req, res, next) => {
         playerTwoPoints,
         winnerId,
         playedAt: playedDate,
-        seasonId: season.id
+        seasonId: season.id,
       },
-      include: matchInclude
+      include: matchInclude,
     });
 
     notifyTeamsMatchCreated(match).catch((error) => {
@@ -942,12 +1167,12 @@ app.patch("/api/matches/:id", async (req, res, next) => {
     playerTwoId,
     playerOnePoints,
     playerTwoPoints,
-    playedAt
+    playedAt,
   } = req.body ?? {};
 
   try {
     const existing = await prisma.match.findUnique({
-      where: { id: matchId }
+      where: { id: matchId },
     });
 
     if (!existing) {
@@ -959,25 +1184,35 @@ app.patch("/api/matches/:id", async (req, res, next) => {
     const nextPlayerTwoId =
       typeof playerTwoId === "number" ? playerTwoId : existing.playerTwoId;
     const nextPlayerOnePoints =
-      typeof playerOnePoints === "number" ? playerOnePoints : existing.playerOnePoints;
+      typeof playerOnePoints === "number"
+        ? playerOnePoints
+        : existing.playerOnePoints;
     const nextPlayerTwoPoints =
-      typeof playerTwoPoints === "number" ? playerTwoPoints : existing.playerTwoPoints;
+      typeof playerTwoPoints === "number"
+        ? playerTwoPoints
+        : existing.playerTwoPoints;
 
     if (nextPlayerOneId === nextPlayerTwoId) {
-      return res.status(400).json({ message: "Een speler kan niet tegen zichzelf spelen." });
+      return res
+        .status(400)
+        .json({ message: "Een speler kan niet tegen zichzelf spelen." });
     }
 
     if (nextPlayerOnePoints === nextPlayerTwoPoints) {
-      return res.status(400).json({ message: "Een potje eindigt altijd met een winnaar." });
+      return res
+        .status(400)
+        .json({ message: "Een potje eindigt altijd met een winnaar." });
     }
 
     if (nextPlayerOnePoints < 0 || nextPlayerTwoPoints < 0) {
-      return res.status(400).json({ message: "Scores kunnen niet negatief zijn." });
+      return res
+        .status(400)
+        .json({ message: "Scores kunnen niet negatief zijn." });
     }
 
     const [playerOne, playerTwo] = await Promise.all([
       prisma.player.findUnique({ where: { id: nextPlayerOneId } }),
-      prisma.player.findUnique({ where: { id: nextPlayerTwoId } })
+      prisma.player.findUnique({ where: { id: nextPlayerTwoId } }),
     ]);
 
     if (!playerOne || !playerTwo) {
@@ -986,7 +1221,10 @@ app.patch("/api/matches/:id", async (req, res, next) => {
 
     const nextPlayedAt = playedAt ? new Date(playedAt) : existing.playedAt;
     const season = await getOrCreateSeasonForDate(nextPlayedAt);
-    const winnerId = nextPlayerOnePoints > nextPlayerTwoPoints ? nextPlayerOneId : nextPlayerTwoId;
+    const winnerId =
+      nextPlayerOnePoints > nextPlayerTwoPoints
+        ? nextPlayerOneId
+        : nextPlayerTwoId;
 
     const updated = await prisma.match.update({
       where: { id: matchId },
@@ -997,9 +1235,9 @@ app.patch("/api/matches/:id", async (req, res, next) => {
         playerTwoPoints: nextPlayerTwoPoints,
         winnerId,
         playedAt: nextPlayedAt,
-        seasonId: season.id
+        seasonId: season.id,
       },
-      include: matchInclude
+      include: matchInclude,
     });
 
     notifyTeamsMatchUpdated(updated).catch((error) => {
@@ -1021,7 +1259,7 @@ app.delete("/api/matches/:id", async (req, res, next) => {
   try {
     const existing = await prisma.match.findUnique({
       where: { id: matchId },
-      include: matchInclude
+      include: matchInclude,
     });
 
     if (!existing) {
@@ -1029,7 +1267,7 @@ app.delete("/api/matches/:id", async (req, res, next) => {
     }
 
     await prisma.match.delete({
-      where: { id: matchId }
+      where: { id: matchId },
     });
 
     notifyTeamsMatchDeleted(existing).catch((error) => {
@@ -1053,12 +1291,12 @@ app.get("/api/seasons", async (_req, res, next) => {
         orderBy: { startDate: "desc" },
         include: {
           matches: {
-            include: matchInclude
+            include: matchInclude,
           },
-          champion: true
-        }
+          champion: true,
+        },
       }),
-      getOrCreateSeasonForDate(new Date())
+      getOrCreateSeasonForDate(new Date()),
     ]);
 
     const now = new Date();
@@ -1076,7 +1314,7 @@ app.get("/api/seasons", async (_req, res, next) => {
           if (season.championId == null || season.championId !== championId) {
             await prisma.season.update({
               where: { id: season.id },
-              data: { championId }
+              data: { championId },
             });
           }
         }
@@ -1096,15 +1334,17 @@ app.get("/api/seasons", async (_req, res, next) => {
             pointsFor: entry.pointsFor,
             pointsAgainst: entry.pointsAgainst,
             winRate: entry.winRate,
-            pointDifferential: entry.pointDifferential
-          }))
+            // Elo rating for season
+            rating: entry.rating,
+            pointDifferential: entry.pointDifferential,
+          })),
         };
       })
     );
 
     res.json({
       currentSeasonId: currentSeason.id,
-      seasons: seasonPayload
+      seasons: seasonPayload,
     });
   } catch (error) {
     next(error);

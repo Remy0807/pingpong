@@ -19,6 +19,8 @@ export type PlayerStats = {
   longestStreak: number;
   championships: number;
   justReachedStreakFive?: boolean;
+  // Optional Elo rating for the current season (if provided by the API)
+  rating?: number;
 };
 
 export type Match = {
@@ -35,6 +37,9 @@ export type Match = {
   season: SeasonRef | null;
   createdAt: string;
   updatedAt: string;
+  // Elo change for this match (positive/negative). Provided by the server when available.
+  playerOneEloDelta?: number;
+  playerTwoEloDelta?: number;
 };
 
 export type SeasonRef = {
@@ -55,6 +60,8 @@ export type SeasonStanding = {
   pointsFor: number;
   pointsAgainst: number;
   winRate: number;
+  // Elo rating for the season. Newer ranking method based on Elo algorithm.
+  rating: number;
   pointDifferential: number;
 };
 

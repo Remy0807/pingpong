@@ -11,10 +11,15 @@ const dateTimeFormatter = new Intl.DateTimeFormat("nl-NL", {
   day: "numeric",
   month: "short",
   hour: "2-digit",
-  minute: "2-digit"
+  minute: "2-digit",
 });
 
-export function MatchesTable({ matches, onEdit, onDelete, pendingDeleteId }: MatchesTableProps) {
+export function MatchesTable({
+  matches,
+  onEdit,
+  onDelete,
+  pendingDeleteId,
+}: MatchesTableProps) {
   if (!matches.length) {
     return (
       <div className="glass-card rounded-xl p-6 text-center text-slate-400">
@@ -51,10 +56,58 @@ export function MatchesTable({ matches, onEdit, onDelete, pendingDeleteId }: Mat
               </header>
 
               <div className="mt-3 flex items-center justify-between rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2">
-                <span className="text-xs uppercase tracking-widest text-slate-400">Score</span>
+                <span className="text-xs uppercase tracking-widest text-slate-400">
+                  Score
+                </span>
                 <span className="text-lg font-semibold text-white">
                   {match.playerOnePoints} - {match.playerTwoPoints}
                 </span>
+              </div>
+
+              {/* Elo changes (mobile) */}
+              <div className="mt-2 flex items-center gap-4">
+                <div className="text-xs text-slate-400">
+                  <div className="uppercase tracking-widest">
+                    Elo Δ {match.playerOne.name}
+                  </div>
+                  <div>
+                    {match.playerOneEloDelta != null ? (
+                      <span
+                        className={`font-semibold ${
+                          match.playerOneEloDelta >= 0
+                            ? "text-emerald-300"
+                            : "text-rose-300"
+                        }`}
+                      >
+                        {match.playerOneEloDelta >= 0 ? "+" : ""}
+                        {match.playerOneEloDelta}
+                      </span>
+                    ) : (
+                      <span className="text-slate-500">-</span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-xs text-slate-400">
+                  <div className="uppercase tracking-widest">
+                    Elo Δ {match.playerTwo.name}
+                  </div>
+                  <div>
+                    {match.playerTwoEloDelta != null ? (
+                      <span
+                        className={`font-semibold ${
+                          match.playerTwoEloDelta >= 0
+                            ? "text-emerald-300"
+                            : "text-rose-300"
+                        }`}
+                      >
+                        {match.playerTwoEloDelta >= 0 ? "+" : ""}
+                        {match.playerTwoEloDelta}
+                      </span>
+                    ) : (
+                      <span className="text-slate-500">-</span>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {(onEdit || onDelete) && (
@@ -88,31 +141,77 @@ export function MatchesTable({ matches, onEdit, onDelete, pendingDeleteId }: Mat
       <div className="hidden md:block overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead className="bg-white/5 text-xs uppercase tracking-widest text-axoft-200">
-              <tr>
-                <th className="px-4 py-3 text-left">Datum</th>
-                <th className="px-4 py-3 text-left">Speler A</th>
-                <th className="px-4 py-3 text-left">Speler B</th>
-                <th className="px-4 py-3 text-left">Score</th>
-                <th className="px-4 py-3 text-left">Winnaar</th>
-                <th className="px-4 py-3 text-left">Seizoen</th>
-                {(onEdit || onDelete) && <th className="px-4 py-3 text-left">Acties</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {matches.map((match) => {
-                const isDeleting = pendingDeleteId === match.id;
-                return (
-                  <tr key={match.id} className="border-t border-white/5">
+            <tr>
+              <th className="px-4 py-3 text-left">Datum</th>
+              <th className="px-4 py-3 text-left">Speler A</th>
+              <th className="px-4 py-3 text-left">Speler B</th>
+              <th className="px-4 py-3 text-left">Score</th>
+              <th className="px-4 py-3 text-left">Winnaar</th>
+              <th className="px-4 py-3 text-left">Seizoen</th>
+              <th className="px-4 py-3 text-left">Elo Δ</th>
+              {(onEdit || onDelete) && (
+                <th className="px-4 py-3 text-left">Acties</th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {matches.map((match) => {
+              const isDeleting = pendingDeleteId === match.id;
+              return (
+                <tr key={match.id} className="border-t border-white/5">
                   <td className="px-4 py-3 text-slate-200">
                     {dateTimeFormatter.format(new Date(match.playedAt))}
                   </td>
-                  <td className="px-4 py-3 text-white">{match.playerOne.name}</td>
-                  <td className="px-4 py-3 text-white">{match.playerTwo.name}</td>
+                  <td className="px-4 py-3 text-white">
+                    {match.playerOne.name}
+                  </td>
+                  <td className="px-4 py-3 text-white">
+                    {match.playerTwo.name}
+                  </td>
                   <td className="px-4 py-3 text-slate-100">
                     {match.playerOnePoints} - {match.playerTwoPoints}
                   </td>
-                  <td className="px-4 py-3 font-semibold text-emerald-300">{match.winner.name}</td>
-                  <td className="px-4 py-3 text-slate-200">{match.season?.name ?? "Onbekend"}</td>
+                  <td className="px-4 py-3 font-semibold text-emerald-300">
+                    {match.winner.name}
+                  </td>
+                  <td className="px-4 py-3 text-slate-200">
+                    {match.season?.name ?? "Onbekend"}
+                  </td>
+                  <td className="px-4 py-3 text-slate-200">
+                    {typeof match.playerOneEloDelta === "number" ||
+                    typeof match.playerTwoEloDelta === "number" ? (
+                      <div className="text-sm">
+                        <span
+                          className={`mr-2 ${
+                            match.playerOneEloDelta &&
+                            match.playerOneEloDelta >= 0
+                              ? "text-emerald-300"
+                              : "text-rose-300"
+                          }`}
+                        >
+                          {match.playerOneEloDelta != null
+                            ? (match.playerOneEloDelta >= 0 ? "+" : "") +
+                              match.playerOneEloDelta
+                            : "-"}
+                        </span>
+                        <span
+                          className={`${
+                            match.playerTwoEloDelta &&
+                            match.playerTwoEloDelta >= 0
+                              ? "text-emerald-300"
+                              : "text-rose-300"
+                          }`}
+                        >
+                          {match.playerTwoEloDelta != null
+                            ? (match.playerTwoEloDelta >= 0 ? "+" : "") +
+                              match.playerTwoEloDelta
+                            : "-"}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-slate-500">-</span>
+                    )}
+                  </td>
                   {(onEdit || onDelete) && (
                     <td className="px-4 py-3 text-slate-200">
                       <div className="flex gap-2">
