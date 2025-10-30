@@ -65,10 +65,12 @@ export function Leaderboard({ players }: LeaderboardProps) {
             <dl className="mt-6 grid grid-cols-2 gap-4 text-sm text-slate-300">
               <div>
                 <dt className="text-xs uppercase tracking-widest text-axoft-200/70">
-                  Potjes
+                  ELO
                 </dt>
                 <dd className="text-lg font-semibold text-white">
-                  {numberFormatter.format(entry.matches)}
+                  {typeof entry.rating === "number"
+                    ? numberFormatter.format(entry.rating)
+                    : "-"}
                 </dd>
               </div>
               <div>
@@ -78,6 +80,22 @@ export function Leaderboard({ players }: LeaderboardProps) {
                 <dd className="text-lg font-semibold text-white">
                   {entry.pointDifferential >= 0 ? "+" : ""}
                   {numberFormatter.format(entry.pointDifferential)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-widest text-axoft-200/70">
+                  Potjes
+                </dt>
+                <dd className="text-lg font-semibold text-white">
+                  {numberFormatter.format(entry.matches)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-widest text-axoft-200/70">
+                  Win%
+                </dt>
+                <dd className="text-lg font-semibold text-white">
+                  {percentageFormatter.format(entry.winRate)}
                 </dd>
               </div>
             </dl>
@@ -108,10 +126,10 @@ export function Leaderboard({ players }: LeaderboardProps) {
               <dl className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-300">
                 <div>
                   <dt className="uppercase tracking-widest text-slate-500">
-                    Potjes
+                    ELO
                   </dt>
                   <dd className="text-sm font-semibold text-white">
-                    {entry.matches}
+                    {typeof entry.rating === "number" ? entry.rating : "-"}
                   </dd>
                 </div>
                 <div>
@@ -127,6 +145,14 @@ export function Leaderboard({ players }: LeaderboardProps) {
                   >
                     {entry.pointDifferential >= 0 ? "+" : ""}
                     {entry.pointDifferential}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="uppercase tracking-widest text-slate-500">
+                    Potjes
+                  </dt>
+                  <dd className="text-sm font-semibold text-white">
+                    {entry.matches}
                   </dd>
                 </div>
                 <div>

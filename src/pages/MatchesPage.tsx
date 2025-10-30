@@ -5,6 +5,10 @@ import { MatchForm } from "../components/MatchForm";
 import { PlayerForm } from "../components/PlayerForm";
 import { Modal } from "../components/Modal";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import {
+  MatchFilters,
+  type MatchFilters as MatchFiltersType,
+} from "../components/MatchFilters";
 import { useAppData } from "../context/AppDataContext";
 import type { Match } from "../types";
 
@@ -12,6 +16,7 @@ export function MatchesPage() {
   const {
     players,
     matches,
+    seasons,
     savingPlayer,
     savingMatch,
     updatingMatch,
@@ -19,7 +24,7 @@ export function MatchesPage() {
     createPlayer,
     createMatch,
     updateMatch,
-    deleteMatch
+    deleteMatch,
   } = useAppData();
 
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
@@ -27,20 +32,58 @@ export function MatchesPage() {
   const [createMatchOpen, setCreateMatchOpen] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<Match | null>(null);
 
-  const sortedMatches = useMemo(
-    () =>
-      [...matches].sort(
-        (a, b) => new Date(b.playedAt).getTime() - new Date(a.playedAt).getTime()
-      ),
-    [matches]
-  );
+  const [filters, setFilters] = useState<MatchFiltersType>({});
+
+  const filteredAndSortedMatches = useMemo(() => {
+    return [...matches]
+      .filter((match) => {
+        if (filters.player) {
+          if (
+            match.playerOne.id !== filters.player &&
+            match.playerTwo.id !== filters.player
+          ) {
+            return false;
+          }
+        }
+
+        if (filters.season && match.season?.id !== filters.season) {
+          return false;
+        }
+
+        if (filters.dateFrom) {
+          const matchDate = new Date(match.playedAt);
+          const fromDate = new Date(filters.dateFrom);
+          fromDate.setHours(0, 0, 0, 0);
+          if (matchDate < fromDate) {
+            return false;
+          }
+        }
+
+        if (filters.dateTo) {
+          const matchDate = new Date(match.playedAt);
+          const toDate = new Date(filters.dateTo);
+          toDate.setHours(23, 59, 59, 999);
+          if (matchDate > toDate) {
+            return false;
+          }
+        }
+
+        return true;
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.playedAt).getTime() - new Date(a.playedAt).getTime()
+      );
+  }, [matches, filters]);
 
   const handleCreatePlayer = async (name: string) => {
     await createPlayer(name);
     setCreatePlayerOpen(false);
   };
 
-  const handleCreateMatch = async (payload: Parameters<typeof createMatch>[0]) => {
+  const handleCreateMatch = async (
+    payload: Parameters<typeof createMatch>[0]
+  ) => {
     await createMatch(payload);
     setCreateMatchOpen(false);
   };
@@ -57,10 +100,12 @@ export function MatchesPage() {
     <div className="space-y-8">
       <section className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-slate-950/50 p-6 md:flex-row md:items-center md:justify-between">
         <div className="space-y-2">
-          <h2 className="text-2xl font-semibold text-white">Wedstrijden beheren</h2>
+          <h2 className="text-2xl font-semibold text-white">
+            Wedstrijden beheren
+          </h2>
           <p className="text-sm text-slate-400">
-            Registreer nieuwe potjes, pas scores aan of verwijder foutieve resultaten. Alles wordt
-            direct doorgevoerd in de statistieken.
+            Registreer nieuwe potjes, pas scores aan of verwijder foutieve
+            resultaten. Alles wordt direct doorgevoerd in de statistieken.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -84,17 +129,14 @@ export function MatchesPage() {
       </section>
 
       <section className="space-y-4">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h3 className="text-xl font-semibold text-white">Alle geregistreerde potjes</h3>
-            <p className="text-sm text-slate-400">
-              Klik op een wedstrijd om de details aan te passen of kies verwijderen om hem volledig te
-              verwijderen.
-            </p>
-          </div>
-        </div>
+        <MatchFilters
+          players={players}
+          seasons={seasons}
+          filters={filters}
+          onChange={setFilters}
+        />
         <MatchesTable
-          matches={sortedMatches}
+          matches={filteredAndSortedMatches}
           onEdit={(match) => setEditingMatch(match)}
           onDelete={(match) => setDeleteCandidate(match)}
           pendingDeleteId={deletingMatchId}
@@ -146,16 +188,24 @@ export function MatchesPage() {
         open={Boolean(deleteCandidate)}
         onCancel={() => setDeleteCandidate(null)}
         onConfirm={handleDeleteMatch}
-        loading={Boolean(deleteCandidate && deletingMatchId === deleteCandidate.id)}
+        loading={Boolean(
+          deleteCandidate && deletingMatchId === deleteCandidate.id
+        )}
         title="Wedstrijd verwijderen"
         confirmLabel="Verwijderen"
         body={
           deleteCandidate ? (
             <p className="text-sm text-slate-300">
               Weet je zeker dat je de wedstrijd tussen{" "}
-              <span className="font-semibold text-white">{deleteCandidate.playerOne.name}</span> en{" "}
-              <span className="font-semibold text-white">{deleteCandidate.playerTwo.name}</span> wilt
-              verwijderen? Deze actie verwijdert ook de punten uit het klassement.
+              <span className="font-semibold text-white">
+                {deleteCandidate.playerOne.name}
+              </span>{" "}
+              en{" "}
+              <span className="font-semibold text-white">
+                {deleteCandidate.playerTwo.name}
+              </span>{" "}
+              wilt verwijderen? Deze actie verwijdert ook de punten uit het
+              klassement.
             </p>
           ) : null
         }

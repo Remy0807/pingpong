@@ -53,10 +53,14 @@ export function MatchForm({
   headerBadge = "Resultaat",
   initialValues,
   onCancel,
-  className
+  className,
 }: MatchFormProps) {
-  const [playerOneId, setPlayerOneId] = useState<number | null>(initialValues?.playerOneId ?? null);
-  const [playerTwoId, setPlayerTwoId] = useState<number | null>(initialValues?.playerTwoId ?? null);
+  const [playerOneId, setPlayerOneId] = useState<number | null>(
+    initialValues?.playerOneId ?? null
+  );
+  const [playerTwoId, setPlayerTwoId] = useState<number | null>(
+    initialValues?.playerTwoId ?? null
+  );
   const [playerOnePoints, setPlayerOnePoints] = useState(
     initialValues?.playerOnePoints ?? defaultPoints.playerOnePoints
   );
@@ -90,7 +94,7 @@ export function MatchForm({
     () =>
       players.map((stats) => ({
         value: stats.player.id,
-        label: stats.player.name
+        label: stats.player.name,
       })),
     [players]
   );
@@ -125,7 +129,7 @@ export function MatchForm({
         playerTwoId,
         playerOnePoints,
         playerTwoPoints,
-        playedAt: playedAt ? new Date(playedAt).toISOString() : undefined
+        playedAt: playedAt ? new Date(playedAt).toISOString() : undefined,
       });
 
       if (!initialValues) {
@@ -160,12 +164,16 @@ export function MatchForm({
             </span>
           ) : null}
           {title ? <h2 className="text-xl font-semibold">{title}</h2> : null}
-          {description ? <p className="text-sm text-slate-400">{description}</p> : null}
+          {description ? (
+            <p className="text-sm text-slate-400">{description}</p>
+          ) : null}
         </header>
       ) : null}
 
       <div className="space-y-2">
-        <label className="block text-sm font-medium text-slate-300">Datum &amp; tijd</label>
+        <label className="block text-sm font-medium text-slate-300">
+          Datum &amp; tijd
+        </label>
         <input
           type="datetime-local"
           value={playedAt}
@@ -173,17 +181,22 @@ export function MatchForm({
           className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
         />
         <p className="text-xs text-slate-500">
-          Standaard wordt de huidige tijd ingevuld. Pas aan indien nodig of verwijder de waarde om
-          nu te gebruiken. Bewerk een bestaande wedstrijd om een foutief moment te corrigeren.
+          Standaard wordt de huidige tijd ingevuld. Pas aan indien nodig of
+          verwijder de waarde om nu te gebruiken. Bewerk een bestaande wedstrijd
+          om een foutief moment te corrigeren.
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-slate-300">Speler A</label>
+          <label className="block text-sm font-medium text-slate-300">
+            Speler A
+          </label>
           <select
             value={playerOneId ?? ""}
-            onChange={(event) => setPlayerOneId(Number(event.target.value) || null)}
+            onChange={(event) =>
+              setPlayerOneId(Number(event.target.value) || null)
+            }
             className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
           >
             <option value="">Kies een speler</option>
@@ -196,10 +209,14 @@ export function MatchForm({
         </div>
 
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-slate-300">Speler B</label>
+          <label className="block text-sm font-medium text-slate-300">
+            Speler B
+          </label>
           <select
             value={playerTwoId ?? ""}
-            onChange={(event) => setPlayerTwoId(Number(event.target.value) || null)}
+            onChange={(event) =>
+              setPlayerTwoId(Number(event.target.value) || null)
+            }
             className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
           >
             <option value="">Kies een speler</option>
@@ -214,23 +231,33 @@ export function MatchForm({
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-slate-300">Score speler A</label>
+          <label className="block text-sm font-medium text-slate-300">
+            Score speler A
+          </label>
           <input
             type="number"
-            value={playerOnePoints}
+            value={playerOnePoints || ""}
             min={0}
-            onChange={(event) => setPlayerOnePoints(Number(event.target.value) || 0)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setPlayerOnePoints(value === "" ? 0 : Number(value));
+            }}
             className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
           />
         </div>
 
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-slate-300">Score speler B</label>
+          <label className="block text-sm font-medium text-slate-300">
+            Score speler B
+          </label>
           <input
             type="number"
-            value={playerTwoPoints}
+            value={playerTwoPoints || ""}
             min={0}
-            onChange={(event) => setPlayerTwoPoints(Number(event.target.value) || 0)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setPlayerTwoPoints(value === "" ? 0 : Number(value));
+            }}
             className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
           />
         </div>

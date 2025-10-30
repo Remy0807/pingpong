@@ -53,56 +53,70 @@ export function DashboardPage() {
   return (
     <div className="flex flex-col gap-8">
       <section className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-5">
-          <span className="text-xs uppercase tracking-widest text-axoft-300">
-            Beste winrate
-          </span>
-          <h3 className="mt-3 text-xl font-semibold text-white">
+        <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 md:p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase tracking-widest text-axoft-300">
+              Beste winrate
+            </span>
+            {stats.bestWinRate && (
+              <span className="rounded-full bg-axoft-500/15 px-2 py-0.5 text-xs font-medium text-axoft-200">
+                {Math.round(stats.bestWinRate.winRate * 100)}%
+              </span>
+            )}
+          </div>
+          <h3 className="mt-2 md:mt-3 text-lg md:text-xl font-semibold text-white truncate">
             {stats.bestWinRate ? stats.bestWinRate.player.name : "Nog onbekend"}
           </h3>
-          <p className="mt-1 text-sm text-slate-300">
-            {stats.bestWinRate
-              ? `${Math.round(stats.bestWinRate.winRate * 100)}% over ${
-                  stats.bestWinRate.matches
-                } potjes`
-              : "Er zijn eerst gespeelde potjes nodig."}
-          </p>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-5">
-          <span className="text-xs uppercase tracking-widest text-axoft-300">
-            Meeste potjes
-          </span>
-          <h3 className="mt-3 text-xl font-semibold text-white">
+        <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 md:p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase tracking-widest text-axoft-300">
+              Meeste potjes
+            </span>
+            {stats.mostMatches && (
+              <span className="rounded-full bg-axoft-500/15 px-2 py-0.5 text-xs font-medium text-axoft-200">
+                {stats.mostMatches.matches}×
+              </span>
+            )}
+          </div>
+          <h3 className="mt-2 md:mt-3 text-lg md:text-xl font-semibold text-white truncate">
             {stats.mostMatches ? stats.mostMatches.player.name : "Nog onbekend"}
           </h3>
-          <p className="mt-1 text-sm text-slate-300">
-            {stats.mostMatches
-              ? `${stats.mostMatches.matches} geregistreerde potjes`
-              : "Zodra er potjes zijn verschijnt hier een topper."}
-          </p>
         </div>
-        <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-5">
-          <span className="text-xs uppercase tracking-widest text-axoft-300">
-            Beste saldo
-          </span>
-          <h3 className="mt-3 text-xl font-semibold text-white">
+        <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 md:p-5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs uppercase tracking-widest text-axoft-300">
+              Beste saldo
+            </span>
+            {stats.bestDifferential && (
+              <span className="rounded-full bg-axoft-500/15 px-2 py-0.5 text-xs font-medium text-axoft-200">
+                {stats.bestDifferential.pointDifferential >= 0 ? "+" : ""}
+                {stats.bestDifferential.pointDifferential}
+              </span>
+            )}
+          </div>
+          <h3 className="mt-2 md:mt-3 text-lg md:text-xl font-semibold text-white truncate">
             {stats.bestDifferential
               ? stats.bestDifferential.player.name
               : "Nog onbekend"}
           </h3>
-          <p className="mt-1 text-sm text-slate-300">
-            {stats.bestDifferential
-              ? `${stats.bestDifferential.pointDifferential >= 0 ? "+" : ""}${
-                  stats.bestDifferential.pointDifferential
-                } punten saldo`
-              : "Zodra er scores zijn verschijnt het saldo."}
-          </p>
         </div>
       </section>
 
+      <div className="md:hidden">
+        <details className="glass-card rounded-xl p-4" open>
+          <summary className="cursor-pointer text-lg font-semibold text-white">
+            Laatste resultaten
+          </summary>
+          <div className="mt-4">
+            <MatchesTable matches={recentMatches} />
+          </div>
+        </details>
+      </div>
+
       <section className="grid gap-6 xl:grid-cols-[minmax(0,60%),minmax(0,40%)]">
         <Leaderboard players={playersWithSeasonRating} />
-        <div className="space-y-4">
+        <div className="hidden md:block space-y-4">
           <h2 className="text-lg font-semibold text-white">
             Laatste resultaten
           </h2>
@@ -110,7 +124,23 @@ export function DashboardPage() {
         </div>
       </section>
 
-      <SeasonOverview seasons={seasons} currentSeasonId={currentSeasonId} />
+      <div className="md:hidden">
+        <details className="glass-card rounded-xl p-4">
+          <summary className="cursor-pointer text-lg font-semibold text-white">
+            Seizoensoverzicht
+          </summary>
+          <div className="mt-4">
+            <SeasonOverview
+              seasons={seasons}
+              currentSeasonId={currentSeasonId}
+            />
+          </div>
+        </details>
+      </div>
+
+      <div className="hidden md:block">
+        <SeasonOverview seasons={seasons} currentSeasonId={currentSeasonId} />
+      </div>
     </div>
   );
 }
