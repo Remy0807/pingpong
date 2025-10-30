@@ -28,6 +28,14 @@ const isPrismaErrorWithCode = (
 app.use(cors());
 app.use(express.json());
 
+// Serve static files from the dist directory
+app.use(express.static("dist"));
+
+// Handle SPA routing - send all non-API requests to index.html
+app.get(/^(?!\/api\/)/, (req, res) => {
+  res.sendFile("index.html", { root: "dist" });
+});
+
 type PlayerWithRelations = Awaited<
   ReturnType<typeof fetchPlayersWithRelations>
 >[number];
