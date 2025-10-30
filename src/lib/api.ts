@@ -1,11 +1,16 @@
 import type { Match, PlayerStats, SeasonSummary } from "../types";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+
 async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, {
+  const url = input.toString().startsWith("http")
+    ? input
+    : `${API_BASE_URL}${input}`;
+  const response = await fetch(url, {
     headers: {
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
-    ...init
+    ...init,
   });
 
   if (!response.ok) {
@@ -50,20 +55,20 @@ export function getPlayerStats(): Promise<PlayerStats[]> {
 export function createPlayer(payload: { name: string }) {
   return request<PlayerStats>("/api/players", {
     method: "POST",
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
 }
 
 export function updatePlayer(id: number, payload: { name: string }) {
   return request<PlayerStats>(`/api/players/${id}`, {
     method: "PATCH",
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
 }
 
 export function deletePlayer(id: number) {
   return request<void>(`/api/players/${id}`, {
-    method: "DELETE"
+    method: "DELETE",
   });
 }
 
@@ -82,20 +87,20 @@ export type MatchPayload = {
 export function createMatch(payload: MatchPayload) {
   return request<Match>("/api/matches", {
     method: "POST",
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
 }
 
 export function updateMatch(id: number, payload: MatchPayload) {
   return request<Match>(`/api/matches/${id}`, {
     method: "PATCH",
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
 }
 
 export function deleteMatch(id: number) {
   return request<void>(`/api/matches/${id}`, {
-    method: "DELETE"
+    method: "DELETE",
   });
 }
 
