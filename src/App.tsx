@@ -33,31 +33,6 @@ export default function App() {
   const [savingMatch, setSavingMatch] = useState(false);
   const [updatingMatch, setUpdatingMatch] = useState(false);
   const [deletingMatchId, setDeletingMatchId] = useState<number | null>(null);
-  const [currentGameCodeState, setCurrentGameCodeState] = useState<
-    string | null
-  >(() => {
-    try {
-      const stored = localStorage.getItem("gameCode");
-      return stored ? stored.toUpperCase() : null;
-    } catch {
-      return null;
-    }
-  });
-
-  const handleSetCurrentGameCode = (code: string | null) => {
-    try {
-      if (code == null) {
-        localStorage.removeItem("gameCode");
-        setCurrentGameCodeState(null);
-      } else {
-        const upper = code.trim().toUpperCase();
-        localStorage.setItem("gameCode", upper);
-        setCurrentGameCodeState(upper);
-      }
-    } catch {
-      // ignore
-    }
-  };
 
   const loadPlayers = useCallback(async () => {
     const playerStats = await getPlayerStats();
@@ -214,7 +189,6 @@ export default function App() {
       matches,
       seasons,
       currentSeasonId,
-      currentGameCode: currentGameCodeState,
       loading,
       error,
       savingPlayer,
@@ -237,7 +211,6 @@ export default function App() {
       matches,
       seasons,
       currentSeasonId,
-      currentGameCodeState,
       loading,
       error,
       savingPlayer,
@@ -255,6 +228,7 @@ export default function App() {
       refreshAll,
     ]
   );
+
   return (
     <BrowserRouter>
       <AppDataProvider value={contextValue}>
