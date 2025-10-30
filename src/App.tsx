@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { GameEntry } from "./components/GameEntry";
 import { AppDataProvider } from "./context/AppDataContext";
 import {
   getMatches,
@@ -11,7 +12,7 @@ import {
   createMatch,
   updateMatch,
   deleteMatch,
-  type MatchPayload
+  type MatchPayload,
 } from "./lib/api";
 import type { Match, PlayerStats, SeasonSummary } from "./types";
 import { AppLayout } from "./components/AppLayout";
@@ -77,7 +78,9 @@ export default function App() {
         await createPlayer({ name });
         await loadPlayers();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Kon speler niet aanmaken.");
+        setError(
+          err instanceof Error ? err.message : "Kon speler niet aanmaken."
+        );
         throw err;
       } finally {
         setSavingPlayer(false);
@@ -94,7 +97,9 @@ export default function App() {
         await updatePlayer(id, { name });
         await loadPlayers();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Kon speler niet bijwerken.");
+        setError(
+          err instanceof Error ? err.message : "Kon speler niet bijwerken."
+        );
         throw err;
       } finally {
         setUpdatingPlayer(false);
@@ -111,7 +116,9 @@ export default function App() {
         await deletePlayer(id);
         await Promise.all([loadPlayers(), loadMatches(), loadSeasons()]);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Kon speler niet verwijderen.");
+        setError(
+          err instanceof Error ? err.message : "Kon speler niet verwijderen."
+        );
         throw err;
       } finally {
         setDeletingPlayerId(null);
@@ -128,7 +135,9 @@ export default function App() {
         await createMatch(payload);
         await Promise.all([loadPlayers(), loadMatches(), loadSeasons()]);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Kon wedstrijd niet opslaan.");
+        setError(
+          err instanceof Error ? err.message : "Kon wedstrijd niet opslaan."
+        );
         throw err;
       } finally {
         setSavingMatch(false);
@@ -145,7 +154,9 @@ export default function App() {
         await updateMatch(id, payload);
         await Promise.all([loadPlayers(), loadMatches(), loadSeasons()]);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Kon wedstrijd niet bijwerken.");
+        setError(
+          err instanceof Error ? err.message : "Kon wedstrijd niet bijwerken."
+        );
         throw err;
       } finally {
         setUpdatingMatch(false);
@@ -162,7 +173,9 @@ export default function App() {
         await deleteMatch(id);
         await Promise.all([loadPlayers(), loadMatches(), loadSeasons()]);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Kon wedstrijd niet verwijderen.");
+        setError(
+          err instanceof Error ? err.message : "Kon wedstrijd niet verwijderen."
+        );
         throw err;
       } finally {
         setDeletingMatchId(null);
@@ -192,7 +205,7 @@ export default function App() {
       updateMatch: handleMatchUpdate,
       deleteMatch: handleMatchDelete,
       refreshAll,
-      setError
+      setError,
     }),
     [
       players,
@@ -213,7 +226,7 @@ export default function App() {
       handleMatchCreate,
       handleMatchUpdate,
       handleMatchDelete,
-      refreshAll
+      refreshAll,
     ]
   );
 
@@ -221,13 +234,16 @@ export default function App() {
     <BrowserRouter>
       <AppDataProvider value={contextValue}>
         <Routes>
-          <Route path="/" element={<AppLayout />}>
+          <Route path="/" element={<GameEntry />} />
+
+          <Route path="/game/:code" element={<AppLayout />}>
             <Route index element={<DashboardPage />} />
             <Route path="matches" element={<MatchesPage />} />
             <Route path="players" element={<PlayersPage />} />
             <Route path="head-to-head" element={<HeadToHeadPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
+
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppDataProvider>
     </BrowserRouter>
