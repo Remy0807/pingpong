@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import SoftGate from "./components/SoftGate";
 import { AppDataProvider } from "./context/AppDataContext";
 import {
   getMatches,
@@ -231,17 +232,19 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <AppDataProvider value={contextValue}>
-        <Routes>
-          <Route path="/" element={<AppLayout />}>
-            <Route index element={<DashboardPage />} />
-            <Route path="matches" element={<MatchesPage />} />
-            <Route path="players" element={<PlayersPage />} />
-            <Route path="head-to-head" element={<HeadToHeadPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
-      </AppDataProvider>
+      <SoftGate>
+        <AppDataProvider value={contextValue}>
+          <Routes>
+            <Route path="/" element={<AppLayout />}>
+              <Route index element={<DashboardPage />} />
+              <Route path="matches" element={<MatchesPage />} />
+              <Route path="players" element={<PlayersPage />} />
+              <Route path="head-to-head" element={<HeadToHeadPage />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          </Routes>
+        </AppDataProvider>
+      </SoftGate>
     </BrowserRouter>
   );
 }
