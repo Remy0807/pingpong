@@ -1,15 +1,59 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAppData } from "../context/AppDataContext";
 
 export function GameEntry() {
   const [code, setCode] = useState("");
   const navigate = useNavigate();
+  const [allowedCodes, setAllowedCodes] = useState<string[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { setCurrentGameCode } = useAppData();
+
+  useEffect(() => {
+    let mounted = true;
+    fetch("/api/games")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!mounted) return;
+        if (data && Array.isArray(data.codes)) {
+          setAllowedCodes(
+            data.codes.map((c: string) => String(c).toUpperCase())
+          );
+        } else {
+          setAllowedCodes([]);
+        }
+      })
+      .catch(() => {
+        if (!mounted) return;
+        // treat failure as 'no restriction' to avoid blocking usage
+        setAllowedCodes([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const submit = (e?: React.FormEvent) => {
     e?.preventDefault();
     const c = code.trim();
     if (!c) return;
-    navigate(`/game/${encodeURIComponent(c.toUpperCase())}`);
+    const upper = c.toUpperCase();
+
+    // If allowedCodes is null we're still loading; prevent submit
+    if (allowedCodes === null) {
+      setError("Bezig met laden, probeer het even opnieuw.");
+      return;
+    }
+
+    // If allowedCodes is empty array => no restriction
+    if (allowedCodes.length > 0 && !allowedCodes.includes(upper)) {
+      setError("Ongeldige gamecode.");
+      return;
+    }
+
+    // persist and update context
+    setCurrentGameCode(upper);
+    navigate(`/game/${encodeURIComponent(upper)}`);
   };
 
   return (
@@ -24,6 +68,12 @@ export function GameEntry() {
         <p className="text-sm text-slate-400 mb-6">
           Voer de gamecode in om door te gaan (bv. AXOFT).
         </p>
+        {allowedCodes !== null && allowedCodes.length > 0 ? (
+          <p className="text-xs text-emerald-200 mb-4">
+            Beschikbare gamecodes: {allowedCodes.join(", ")}
+          </p>
+        ) : null}
+        {error ? <p className="text-sm text-rose-300 mb-4">{error}</p> : null}
         <div className="flex gap-2">
           <input
             value={code}

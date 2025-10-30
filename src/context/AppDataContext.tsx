@@ -7,6 +7,8 @@ export type AppDataContextValue = {
   matches: Match[];
   seasons: SeasonSummary[];
   currentSeasonId: number | null;
+  // Currently selected game code (from landing page). Uppercased.
+  currentGameCode: string | null;
   loading: boolean;
   error: string | null;
   savingPlayer: boolean;
@@ -23,18 +25,24 @@ export type AppDataContextValue = {
   deleteMatch: (id: number) => Promise<void>;
   refreshAll: () => Promise<void>;
   setError: (message: string | null) => void;
+  // Set or clear the current game code. Pass null to clear.
+  setCurrentGameCode: (code: string | null) => void;
 };
 
-const AppDataContext = createContext<AppDataContextValue | undefined>(undefined);
+const AppDataContext = createContext<AppDataContextValue | undefined>(
+  undefined
+);
 
 export function AppDataProvider({
   value,
-  children
+  children,
 }: {
   value: AppDataContextValue;
   children: React.ReactNode;
 }) {
-  return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
+  return (
+    <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>
+  );
 }
 
 export function useAppData() {

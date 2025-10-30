@@ -1351,6 +1351,22 @@ app.get("/api/seasons", async (_req, res, next) => {
   }
 });
 
+// Return allowed game codes from SERVER_GAME_CODES env var (comma-separated).
+// If not set, return empty array meaning 'no restriction' on codes.
+app.get("/api/games", (_req, res) => {
+  try {
+    const raw = process.env.SERVER_GAME_CODES ?? "";
+    const codes = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => s.toUpperCase());
+    res.json({ codes });
+  } catch (err) {
+    res.json({ codes: [] });
+  }
+});
+
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   console.error(error);
   res.status(500).json({ message: "Er ging iets mis." });
