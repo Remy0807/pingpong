@@ -332,81 +332,41 @@ export function HeadToHead({ players, matches }: HeadToHeadProps) {
                   Deze spelers hebben nog geen potjes tegen elkaar gespeeld.
                 </div>
               ) : (
-                <>
-                  <div className="space-y-3 md:hidden">
-                    {pairMatches.map((match) => {
-                      const winnerIsA = match.winnerId === playerAId;
-                      const score =
-                        match.playerOneId === playerAId
-                          ? `${match.playerOnePoints} - ${match.playerTwoPoints}`
-                          : `${match.playerTwoPoints} - ${match.playerOnePoints}`;
-                      return (
-                        <article
-                          key={match.id}
-                          className="rounded-xl border border-white/10 bg-slate-950/50 p-4 text-sm text-slate-200"
-                        >
-                          <header className="flex flex-col gap-2">
-                            <span className="text-xs uppercase tracking-widest text-axoft-200">
+                <div className="overflow-hidden rounded-2xl border border-white/10">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-white/5 text-xs uppercase tracking-widest text-axoft-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Datum</th>
+                        <th className="px-4 py-3 text-left">Winnaar</th>
+                        <th className="px-4 py-3 text-left">Score</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pairMatches.map((match) => {
+                        const winnerIsA = match.winnerId === playerAId;
+                        const score =
+                          match.playerOneId === playerAId
+                            ? `${match.playerOnePoints} - ${match.playerTwoPoints}`
+                            : `${match.playerTwoPoints} - ${match.playerOnePoints}`;
+                        return (
+                          <tr key={match.id} className="border-t border-white/5">
+                            <td className="px-4 py-3 text-slate-200">
                               {matchDateFormatter.format(new Date(match.playedAt))}
-                            </span>
-                            <p className="text-base font-semibold text-white">
-                              {match.playerOne.name} vs {match.playerTwo.name}
-                            </p>
-                          </header>
-                          <div className="mt-3 flex items-center justify-between rounded-lg border border-white/10 bg-slate-900/60 px-3 py-2">
-                            <span className="text-xs uppercase tracking-widest text-slate-400">
-                              Score
-                            </span>
-                            <span className="text-lg font-semibold text-white">{score}</span>
-                          </div>
-                          <p
-                            className={`mt-3 text-xs font-semibold ${
-                              winnerIsA ? "text-emerald-300" : "text-axoft-200"
-                            }`}
-                          >
-                            Winnaar: {match.winner.name}
-                          </p>
-                        </article>
-                      );
-                    })}
-                  </div>
-
-                  <div className="hidden overflow-x-auto rounded-2xl border border-white/10 md:block">
-                    <table className="min-w-full text-sm">
-                      <thead className="bg-white/5 text-xs uppercase tracking-widest text-axoft-200">
-                        <tr>
-                          <th className="px-4 py-3 text-left">Datum</th>
-                          <th className="px-4 py-3 text-left">Winnaar</th>
-                          <th className="px-4 py-3 text-left">Score</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pairMatches.map((match) => {
-                          const winnerIsA = match.winnerId === playerAId;
-                          const score =
-                            match.playerOneId === playerAId
-                              ? `${match.playerOnePoints} - ${match.playerTwoPoints}`
-                              : `${match.playerTwoPoints} - ${match.playerOnePoints}`;
-                          return (
-                            <tr key={match.id} className="border-t border-white/5">
-                              <td className="px-4 py-3 text-slate-200">
-                                {matchDateFormatter.format(new Date(match.playedAt))}
-                              </td>
-                              <td
-                                className={`px-4 py-3 font-semibold ${
-                                  winnerIsA ? "text-emerald-300" : "text-axoft-200"
-                                }`}
-                              >
-                                {match.winner.name}
-                              </td>
-                              <td className="px-4 py-3 text-slate-100">{score}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                            </td>
+                            <td
+                              className={`px-4 py-3 font-semibold ${
+                                winnerIsA ? "text-emerald-300" : "text-axoft-200"
+                              }`}
+                            >
+                              {match.winner.name}
+                            </td>
+                            <td className="px-4 py-3 text-slate-100">{score}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </>

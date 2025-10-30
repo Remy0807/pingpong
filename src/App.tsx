@@ -19,20 +19,8 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { MatchesPage } from "./pages/MatchesPage";
 import { PlayersPage } from "./pages/PlayersPage";
 import { HeadToHeadPage } from "./pages/HeadToHeadPage";
-import { useAuth } from "./context/AuthContext";
-import { AuthPage } from "./pages/AuthPage";
-import { FriendsPage } from "./pages/FriendsPage";
-import { GroupsPage } from "./pages/GroupsPage";
 
-function FullScreenMessage({ message }: { message: string }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-300">
-      {message}
-    </div>
-  );
-}
-
-function AuthenticatedApp() {
+export default function App() {
   const [players, setPlayers] = useState<PlayerStats[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
@@ -230,32 +218,18 @@ function AuthenticatedApp() {
   );
 
   return (
-    <AppDataProvider value={contextValue}>
-      <Routes>
-        <Route path="/" element={<AppLayout />}>
-          <Route index element={<DashboardPage />} />
-          <Route path="matches" element={<MatchesPage />} />
-          <Route path="players" element={<PlayersPage />} />
-          <Route path="head-to-head" element={<HeadToHeadPage />} />
-          <Route path="friends" element={<FriendsPage />} />
-          <Route path="groups" element={<GroupsPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
-    </AppDataProvider>
-  );
-}
-
-export default function App() {
-  const { user, initializing } = useAuth();
-
-  if (initializing) {
-    return <FullScreenMessage message="Bezig met laden..." />;
-  }
-
-  return (
     <BrowserRouter>
-      {user ? <AuthenticatedApp /> : <AuthPage />}
+      <AppDataProvider value={contextValue}>
+        <Routes>
+          <Route path="/" element={<AppLayout />}>
+            <Route index element={<DashboardPage />} />
+            <Route path="matches" element={<MatchesPage />} />
+            <Route path="players" element={<PlayersPage />} />
+            <Route path="head-to-head" element={<HeadToHeadPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </AppDataProvider>
     </BrowserRouter>
   );
 }

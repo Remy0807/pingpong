@@ -53,11 +53,8 @@ export function MatchesPage() {
     setDeleteCandidate(null);
   };
 
-  const mobileActionsVisible =
-    !createMatchOpen && !createPlayerOpen && !deleteCandidate && !editingMatch;
-
   return (
-    <div className="space-y-8 pb-24 md:pb-0">
+    <div className="space-y-8">
       <section className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-slate-950/50 p-6 md:flex-row md:items-center md:justify-between">
         <div className="space-y-2">
           <h2 className="text-2xl font-semibold text-white">Wedstrijden beheren</h2>
@@ -163,27 +160,6 @@ export function MatchesPage() {
           ) : null
         }
       />
-
-      {mobileActionsVisible ? (
-        <div className="fixed bottom-6 left-0 right-0 z-30 px-4 md:hidden">
-          <div className="mx-auto flex max-w-md items-center gap-3 rounded-full border border-white/10 bg-slate-950/95 px-4 py-3 shadow-2xl shadow-axoft-500/10">
-            <button
-              type="button"
-              onClick={() => setCreateMatchOpen(true)}
-              className="flex-1 rounded-full bg-axoft-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 focus:ring-offset-2 focus:ring-offset-slate-950"
-            >
-              Nieuw potje
-            </button>
-            <button
-              type="button"
-              onClick={() => setCreatePlayerOpen(true)}
-              className="rounded-full border border-white/10 bg-slate-900/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-axoft-400 hover:text-axoft-200 focus:outline-none focus:ring-2 focus:ring-axoft-500/40"
-            >
-              Speler
-            </button>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

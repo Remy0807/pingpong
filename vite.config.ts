@@ -6,10 +6,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "https://pingpong-vu5r.onrender.com",
-    },
+      "/api": "http://localhost:4000"
+    }
   },
   build: {
-    outDir: "dist",
-  },
+    outDir: "dist"
+  }
 });
