@@ -1,7 +1,20 @@
-import type { PlayerStats } from "../types";
+export type LeaderboardEntry = {
+  player: {
+    id: number;
+    name: string;
+  };
+  wins: number;
+  losses: number;
+  matches: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  winRate: number;
+  pointDifferential: number;
+  rating?: number;
+};
 
 type LeaderboardProps = {
-  players: PlayerStats[];
+  entries: LeaderboardEntry[];
 };
 
 const numberFormatter = new Intl.NumberFormat("nl-NL", {
@@ -13,8 +26,8 @@ const percentageFormatter = new Intl.NumberFormat("nl-NL", {
   maximumFractionDigits: 0,
 });
 
-export function Leaderboard({ players }: LeaderboardProps) {
-  if (!players.length) {
+export function Leaderboard({ entries }: LeaderboardProps) {
+  if (!entries.length) {
     return (
       <div className="glass-card rounded-xl p-6 text-center text-slate-400">
         Nog geen statistieken beschikbaar. Voeg resultaten toe om het klassement
@@ -23,7 +36,7 @@ export function Leaderboard({ players }: LeaderboardProps) {
     );
   }
 
-  const sorted = [...players].sort((a, b) => {
+  const sorted = [...entries].sort((a, b) => {
     // If both players have a season Elo rating, sort by rating first
     if (typeof b.rating === "number" && typeof a.rating === "number") {
       if (b.rating === a.rating) {

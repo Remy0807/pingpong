@@ -1,5 +1,11 @@
-import { useMemo } from "react";
-import { Leaderboard } from "../components/Leaderboard";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
+import { Leaderboard, type LeaderboardEntry } from "../components/Leaderboard";
 import { MatchesTable } from "../components/MatchesTable";
 import { SeasonOverview } from "../components/SeasonOverview";
 import { useAppData } from "../context/AppDataContext";
@@ -7,18 +13,84 @@ import { useAppData } from "../context/AppDataContext";
 export function DashboardPage() {
   const { players, matches, seasons, currentSeasonId } = useAppData();
 
+  const [selectedScope, setSelectedScope] = useState<"overall" | number>("overall");
+  const initializedScope = useRef(false);
+
+  useEffect(() => {
+    if (!initializedScope.current && currentSeasonId != null) {
+      setSelectedScope(currentSeasonId);
+      initializedScope.current = true;
+    }
+  }, [currentSeasonId]);
+
+  useEffect(() => {
+    if (
+      typeof selectedScope === "number" &&
+      seasons.length > 0 &&
+      seasons.every((season) => season.id !== selectedScope)
+    ) {
+      setSelectedScope(currentSeasonId ?? "overall");
+    }
+  }, [currentSeasonId, seasons, selectedScope]);
+
+  const selectedSeason = useMemo(() => {
+    if (typeof selectedScope !== "number") {
+      return null;
+    }
+    return seasons.find((season) => season.id === selectedScope) ?? null;
+  }, [selectedScope, seasons]);
+
+  const leaderboardEntries = useMemo<LeaderboardEntry[]>(() => {
+    if (selectedScope === "overall") {
+      return players.map((entry) => ({
+        player: {
+          id: entry.player.id,
+          name: entry.player.name,
+        },
+        wins: entry.wins,
+        losses: entry.losses,
+        matches: entry.matches,
+        pointsFor: entry.pointsFor,
+        pointsAgainst: entry.pointsAgainst,
+        winRate: entry.winRate,
+        pointDifferential: entry.pointDifferential,
+      }));
+    }
+
+    const season = seasons.find((season) => season.id === selectedScope);
+    if (!season) {
+      return [];
+    }
+
+    return season.standings.map((standing) => ({
+      player: standing.player,
+      wins: standing.wins,
+      losses: standing.losses,
+      matches: standing.matches,
+      pointsFor: standing.pointsFor,
+      pointsAgainst: standing.pointsAgainst,
+      winRate: standing.winRate,
+      pointDifferential: standing.pointDifferential,
+      rating: standing.rating,
+    }));
+  }, [players, seasons, selectedScope]);
+
   const stats = useMemo(() => {
-    const activePlayers = players.filter((entry) => entry.matches > 0);
-    const bestWinRate = [...activePlayers].sort(
-      (a, b) => b.winRate - a.winRate
-    )[0];
-    const mostMatches = [...players].sort((a, b) => b.matches - a.matches)[0];
-    const bestDifferential = [...players].sort(
-      (a, b) => b.pointDifferential - a.pointDifferential
-    )[0];
+    const activePlayers = leaderboardEntries.filter((entry) => entry.matches > 0);
+    const bestWinRate = activePlayers.length
+      ? [...activePlayers].sort((a, b) => b.winRate - a.winRate)[0]
+      : undefined;
+    const mostMatches = leaderboardEntries.length
+      ? [...leaderboardEntries].sort((a, b) => b.matches - a.matches)[0]
+      : undefined;
+    const bestDifferential = leaderboardEntries.length
+      ? [...leaderboardEntries].sort(
+          (a, b) => b.pointDifferential - a.pointDifferential
+        )[0]
+      : undefined;
 
     return { bestWinRate, mostMatches, bestDifferential };
-  }, [players]);
+  }, [leaderboardEntries]);
 
   const recentMatches = useMemo(
     () =>
@@ -31,24 +103,22 @@ export function DashboardPage() {
     [matches]
   );
 
-  // Annotate players with season Elo rating (if available for the current season)
-  const playersWithSeasonRating = useMemo(() => {
-    const currentSeason =
-      seasons.find((s) => s.id === currentSeasonId) ?? seasons[0];
-    const ratingMap = new Map<number, number>();
-    if (currentSeason) {
-      currentSeason.standings.forEach((st) => {
-        if (typeof st.rating === "number") {
-          ratingMap.set(st.player.id, st.rating);
-        }
-      });
-    }
+  const scopeDescription =
+    selectedScope === "overall"
+      ? "Alle gespeelde wedstrijden"
+      : selectedSeason
+        ? `${selectedSeason.matches} ${
+            selectedSeason.matches === 1 ? "wedstrijd" : "wedstrijden"
+          } in ${selectedSeason.name}`
+        : "Geen seizoensgegevens beschikbaar";
 
-    return players.map((p) => ({
-      ...p,
-      rating: ratingMap.get(p.player.id) ?? undefined,
-    }));
-  }, [players, seasons, currentSeasonId]);
+  const handleScopeChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const value = event.target.value;
+    setSelectedScope(value === "overall" ? "overall" : Number(value));
+  };
+
+  const selectValue =
+    selectedScope === "overall" ? "overall" : String(selectedScope);
 
   return (
     <div className="flex flex-col gap-8">
@@ -115,7 +185,32 @@ export function DashboardPage() {
       </div>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,60%),minmax(0,40%)]">
-        <Leaderboard players={playersWithSeasonRating} />
+        <div className="space-y-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Klassement</h2>
+              <p className="text-sm text-slate-400">{scopeDescription}</p>
+            </div>
+            <label className="flex flex-col gap-1 text-xs uppercase tracking-widest text-axoft-200 sm:flex-row sm:items-center">
+              <span>Bekijk</span>
+              <select
+                className="rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none focus:border-axoft-400 focus:ring-2 focus:ring-axoft-400/40"
+                value={selectValue}
+                onChange={handleScopeChange}
+              >
+                {seasons.map((season) => (
+                  <option key={season.id} value={season.id}>
+                    {season.id === currentSeasonId
+                      ? `${season.name} (huidig)`
+                      : season.name}
+                  </option>
+                ))}
+                <option value="overall">Totaal (alle seizoenen)</option>
+              </select>
+            </label>
+          </div>
+          <Leaderboard entries={leaderboardEntries} />
+        </div>
         <div className="hidden md:block space-y-4">
           <h2 className="text-lg font-semibold text-white">
             Laatste resultaten

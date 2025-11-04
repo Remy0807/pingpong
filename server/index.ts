@@ -1334,7 +1334,7 @@ app.get("/api/seasons", async (_req, res, next) => {
           endDate: season.endDate.toISOString(),
           matches: season.matches.length,
           champion: championPayload,
-          standings: standings.slice(0, 10).map((entry) => ({
+          standings: standings.map((entry) => ({
             player: entry.player,
             wins: entry.wins,
             losses: entry.losses,
