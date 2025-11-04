@@ -1,3 +1,5 @@
+import { Sparkline } from "./Sparkline";
+
 export type LeaderboardEntry = {
   player: {
     id: number;
@@ -11,6 +13,7 @@ export type LeaderboardEntry = {
   winRate: number;
   pointDifferential: number;
   rating?: number;
+  ratingTrend?: number[];
 };
 
 type LeaderboardProps = {
@@ -55,6 +58,7 @@ export function Leaderboard({ entries }: LeaderboardProps) {
   });
 
   const topThree = sorted.slice(0, 3);
+  const remaining = sorted.slice(3);
 
   return (
     <section className="space-y-6">
@@ -75,6 +79,11 @@ export function Leaderboard({ entries }: LeaderboardProps) {
             <h3 className="mt-4 text-xl font-semibold text-white">
               {entry.player.name}
             </h3>
+            {entry.ratingTrend && entry.ratingTrend.length > 1 ? (
+              <div className="mt-2 text-xs text-axoft-200/70">
+                <Sparkline values={entry.ratingTrend} />
+              </div>
+            ) : null}
             <dl className="mt-6 grid grid-cols-2 gap-4 text-sm text-slate-300">
               <div>
                 <dt className="text-xs uppercase tracking-widest text-axoft-200/70">
@@ -123,86 +132,68 @@ export function Leaderboard({ entries }: LeaderboardProps) {
 
       <div className="glass-card rounded-2xl border border-white/10 p-2 sm:p-4">
         <div className="md:hidden space-y-3">
-          {sorted.map((entry) => (
-            <article
-              key={entry.player.id}
-              className="rounded-xl border border-white/10 bg-slate-950/60 p-4 text-sm text-slate-200"
-            >
-              <header className="flex items-center justify-between gap-3">
-                <h3 className="text-base font-semibold text-white">
-                  {entry.player.name}
-                </h3>
+          {remaining.length ? (
+            <details className="rounded-xl border border-white/10 bg-slate-950/60 p-4 text-sm text-slate-200">
+              <summary className="flex cursor-pointer items-center justify-between gap-2 text-base font-semibold text-white">
+                Overige spelers
                 <span className="rounded-full bg-axoft-500/15 px-3 py-1 text-xs font-medium text-axoft-200">
-                  {percentageFormatter.format(entry.winRate)}
+                  +{remaining.length}
                 </span>
-              </header>
-              <dl className="mt-3 grid grid-cols-2 gap-3 text-xs text-slate-300">
-                <div>
-                  <dt className="uppercase tracking-widest text-slate-500">
-                    ELO
-                  </dt>
-                  <dd className="text-sm font-semibold text-white">
-                    {typeof entry.rating === "number" ? entry.rating : "-"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="uppercase tracking-widest text-slate-500">
-                    Saldo
-                  </dt>
-                  <dd
-                    className={`text-sm font-semibold ${
-                      entry.pointDifferential >= 0
-                        ? "text-emerald-300"
-                        : "text-rose-300"
-                    }`}
+              </summary>
+              <div className="mt-4 space-y-3">
+                {remaining.map((entry) => (
+                  <article
+                    key={entry.player.id}
+                    className="rounded-lg border border-white/10 bg-slate-950/70 p-3 text-xs text-slate-300"
                   >
-                    {entry.pointDifferential >= 0 ? "+" : ""}
-                    {entry.pointDifferential}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="uppercase tracking-widest text-slate-500">
-                    Potjes
-                  </dt>
-                  <dd className="text-sm font-semibold text-white">
-                    {entry.matches}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="uppercase tracking-widest text-slate-500">
-                    Gewonnen
-                  </dt>
-                  <dd className="text-sm font-semibold text-emerald-300">
-                    {entry.wins}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="uppercase tracking-widest text-slate-500">
-                    Verloren
-                  </dt>
-                  <dd className="text-sm font-semibold text-rose-300">
-                    {entry.losses}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="uppercase tracking-widest text-slate-500">
-                    Punten +
-                  </dt>
-                  <dd className="text-sm font-semibold text-slate-100">
-                    {entry.pointsFor}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="uppercase tracking-widest text-slate-500">
-                    Punten -
-                  </dt>
-                  <dd className="text-sm font-semibold text-slate-100">
-                    {entry.pointsAgainst}
-                  </dd>
-                </div>
-              </dl>
-            </article>
-          ))}
+                    <header className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-semibold text-white">
+                        {entry.player.name}
+                      </h3>
+                      <span className="rounded-full bg-axoft-500/15 px-3 py-1 text-[0.7rem] font-medium text-axoft-200">
+                        {percentageFormatter.format(entry.winRate)}
+                      </span>
+                    </header>
+                    <dl className="mt-2 grid grid-cols-[repeat(3,minmax(0,1fr))] gap-2">
+                      <div>
+                        <dt className="uppercase tracking-widest text-slate-500">
+                          Elo
+                        </dt>
+                        <dd className="text-sm font-semibold text-white">
+                          {typeof entry.rating === "number"
+                            ? entry.rating
+                            : "-"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="uppercase tracking-widest text-slate-500">
+                          Potjes
+                        </dt>
+                        <dd className="text-sm font-semibold text-white">
+                          {entry.matches}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="uppercase tracking-widest text-slate-500">
+                          Saldo
+                        </dt>
+                        <dd
+                          className={`text-sm font-semibold ${
+                            entry.pointDifferential >= 0
+                              ? "text-emerald-300"
+                              : "text-rose-300"
+                          }`}
+                        >
+                          {entry.pointDifferential >= 0 ? "+" : ""}
+                          {entry.pointDifferential}
+                        </dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
+              </div>
+            </details>
+          ) : null}
         </div>
         <div className="hidden md:block overflow-x-auto">
           <table className="min-w-full text-sm">

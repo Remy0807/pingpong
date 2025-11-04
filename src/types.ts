@@ -73,3 +73,24 @@ export type SeasonSummary = SeasonRef & {
   } | null;
   standings: SeasonStanding[];
 };
+
+export type MatchRecommendation = {
+  playerOne: {
+    id: number;
+    name: string;
+  };
+  playerTwo: {
+    id: number;
+    name: string;
+  };
+  score: number;
+  ratingDiff: number | null;
+  seasonMeetings: number;
+  totalMeetings: number;
+  lastPlayedAt: string | null;
+  reasons: string[];
+  record: {
+    playerOneWins: number;
+    playerTwoWins: number;
+  };
+};

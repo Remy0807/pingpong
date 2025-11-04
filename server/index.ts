@@ -886,6 +886,251 @@ const computeEloDeltas = (matches: MatchWithRelations[]) => {
   return deltas;
 };
 
+type MatchRecommendation = {
+  playerOne: {
+    id: number;
+    name: string;
+  };
+  playerTwo: {
+    id: number;
+    name: string;
+  };
+  score: number;
+  ratingDiff: number | null;
+  seasonMeetings: number;
+  totalMeetings: number;
+  lastPlayedAt: string | null;
+  reasons: string[];
+  record: {
+    playerOneWins: number;
+    playerTwoWins: number;
+  };
+};
+
+const buildMatchRecommendations = async () => {
+  const now = new Date();
+  const [currentSeason, players, matches, championCounts] = await Promise.all([
+    getOrCreateSeasonForDate(now),
+    fetchPlayersWithRelations(),
+    prisma.match.findMany({
+      include: matchInclude,
+      orderBy: { playedAt: "desc" },
+    }),
+    getChampionCounts(),
+  ]);
+
+  const playerStats = players.map((player) =>
+    buildPlayerStats(player, { currentSeason, championCounts })
+  );
+
+  const playerStatsMap = new Map(playerStats.map((entry) => [entry.player.id, entry]));
+
+  const seasonMatches = matches.filter(
+    (match) => match.seasonId === currentSeason.id
+  );
+
+  const seasonMatchesPerPlayer = new Map<number, number>();
+  seasonMatches.forEach((match) => {
+    seasonMatchesPerPlayer.set(
+      match.playerOneId,
+      (seasonMatchesPerPlayer.get(match.playerOneId) ?? 0) + 1
+    );
+    seasonMatchesPerPlayer.set(
+      match.playerTwoId,
+      (seasonMatchesPerPlayer.get(match.playerTwoId) ?? 0) + 1
+    );
+  });
+
+  const seasonStandings = calculateSeasonStandings(seasonMatches);
+  const ratingMap = new Map<number, number>();
+  seasonStandings.forEach((standing) => {
+    ratingMap.set(standing.player.id, standing.rating);
+  });
+
+  type PairKey = `${number}-${number}`;
+  type PairStats = {
+    playerAId: number;
+    playerBId: number;
+    playerAWins: number;
+    playerBWins: number;
+    totalMatches: number;
+    seasonMatches: number;
+    lastPlayedAt: Date | null;
+  };
+
+  const pairStatsMap = new Map<PairKey, PairStats>();
+
+  const makeKey = (idA: number, idB: number): PairKey =>
+    idA < idB ? `${idA}-${idB}` : `${idB}-${idA}`;
+
+  matches.forEach((match) => {
+    const idA = Math.min(match.playerOneId, match.playerTwoId);
+    const idB = Math.max(match.playerOneId, match.playerTwoId);
+    const key = makeKey(idA, idB);
+    const pairStats =
+      pairStatsMap.get(key) ??
+      {
+        playerAId: idA,
+        playerBId: idB,
+        playerAWins: 0,
+        playerBWins: 0,
+        totalMatches: 0,
+        seasonMatches: 0,
+        lastPlayedAt: null,
+      };
+
+    pairStats.totalMatches += 1;
+    if (match.winnerId === idA) {
+      pairStats.playerAWins += 1;
+    } else if (match.winnerId === idB) {
+      pairStats.playerBWins += 1;
+    }
+    if (match.seasonId === currentSeason.id) {
+      pairStats.seasonMatches += 1;
+    }
+    if (
+      !pairStats.lastPlayedAt ||
+      match.playedAt.getTime() > pairStats.lastPlayedAt.getTime()
+    ) {
+      pairStats.lastPlayedAt = match.playedAt;
+    }
+
+    pairStatsMap.set(key, pairStats);
+  });
+
+  const eligiblePlayers = playerStats.filter((entry) => entry.matches > 0);
+  for (let i = 0; i < eligiblePlayers.length; i += 1) {
+    for (let j = i + 1; j < eligiblePlayers.length; j += 1) {
+      const playerAId = eligiblePlayers[i].player.id;
+      const playerBId = eligiblePlayers[j].player.id;
+      const key = makeKey(playerAId, playerBId);
+      if (!pairStatsMap.has(key)) {
+        pairStatsMap.set(key, {
+          playerAId,
+          playerBId,
+          playerAWins: 0,
+          playerBWins: 0,
+          totalMatches: 0,
+          seasonMatches: 0,
+          lastPlayedAt: null,
+        });
+      }
+    }
+  }
+
+  const recommendations: MatchRecommendation[] = [];
+
+  pairStatsMap.forEach((pairStats) => {
+    const playerA = playerStatsMap.get(pairStats.playerAId);
+    const playerB = playerStatsMap.get(pairStats.playerBId);
+    if (!playerA || !playerB) {
+      return;
+    }
+
+    const reasons: string[] = [];
+    let score = 0;
+
+    const playerASeasonMatches = seasonMatchesPerPlayer.get(
+      pairStats.playerAId
+    ) ?? 0;
+    const playerBSeasonMatches = seasonMatchesPerPlayer.get(
+      pairStats.playerBId
+    ) ?? 0;
+
+    if (playerASeasonMatches === 0 && playerBSeasonMatches === 0) {
+      return;
+    }
+
+    if (pairStats.seasonMatches === 0) {
+      reasons.push("Nog niet tegen elkaar gespeeld dit seizoen.");
+      score += 40;
+    } else if (pairStats.lastPlayedAt) {
+      const daysSince =
+        (now.getTime() - pairStats.lastPlayedAt.getTime()) / (1000 * 60 * 60 * 24);
+      if (daysSince >= 21) {
+        reasons.push("Al even geen onderlinge wedstrijd geweest.");
+        score += 10;
+      }
+    }
+
+    const totalDiff = Math.abs(pairStats.playerAWins - pairStats.playerBWins);
+    if (pairStats.totalMatches > 0 && totalDiff <= 1) {
+      reasons.push("Bijna gelijke historische stand.");
+      score += 20;
+    }
+    if (pairStats.totalMatches === 0) {
+      reasons.push("Nog nooit tegen elkaar gespeeld.");
+      score += 15;
+    }
+
+    const ratingA = ratingMap.get(pairStats.playerAId) ?? 1000;
+    const ratingB = ratingMap.get(pairStats.playerBId) ?? 1000;
+    const ratingDiff = Math.abs(ratingA - ratingB);
+    if (ratingDiff <= 40) {
+      reasons.push("Elo ratings liggen dicht bij elkaar.");
+      score += 15;
+    } else if (ratingDiff <= 100) {
+      score += 5;
+    }
+
+    if (playerA.currentStreak >= 2 && playerB.currentStreak >= 2) {
+      reasons.push("Beide spelers zitten in een vormpiek.");
+      score += 10;
+    }
+
+    if (playerASeasonMatches >= 3 && playerBSeasonMatches >= 3) {
+      reasons.push("Beide spelers zijn actief dit seizoen.");
+      score += 5;
+    }
+
+    if (reasons.length === 0 || score <= 0) {
+      return;
+    }
+
+    recommendations.push({
+      playerOne: {
+        id: playerA.player.id,
+        name: playerA.player.name,
+      },
+      playerTwo: {
+        id: playerB.player.id,
+        name: playerB.player.name,
+      },
+      score,
+      ratingDiff: ratingDiff || null,
+      seasonMeetings: pairStats.seasonMatches,
+      totalMeetings: pairStats.totalMatches,
+      lastPlayedAt: pairStats.lastPlayedAt
+        ? pairStats.lastPlayedAt.toISOString()
+        : null,
+      reasons,
+      record: {
+        playerOneWins: pairStats.playerAWins,
+        playerTwoWins: pairStats.playerBWins,
+      },
+    });
+  });
+
+  recommendations.sort((a, b) => {
+    if (b.score === a.score) {
+      const aTime = a.lastPlayedAt ? new Date(a.lastPlayedAt).getTime() : 0;
+      const bTime = b.lastPlayedAt ? new Date(b.lastPlayedAt).getTime() : 0;
+      return aTime - bTime;
+    }
+    return b.score - a.score;
+  });
+
+  return {
+    season: {
+      id: currentSeason.id,
+      name: currentSeason.name,
+      startDate: currentSeason.startDate.toISOString(),
+      endDate: currentSeason.endDate.toISOString(),
+    },
+    recommendations: recommendations.slice(0, 12),
+  };
+};
+
 app.get("/healthz", (_req, res) => {
   res.json({ ok: true });
 });
@@ -1353,6 +1598,19 @@ app.get("/api/seasons", async (_req, res, next) => {
     res.json({
       currentSeasonId: currentSeason.id,
       seasons: seasonPayload,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/recommendations", async (_req, res, next) => {
+  try {
+    const result = await buildMatchRecommendations();
+    res.json({
+      generatedAt: new Date().toISOString(),
+      season: result.season,
+      recommendations: result.recommendations,
     });
   } catch (error) {
     next(error);

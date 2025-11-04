@@ -20,6 +20,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { MatchesPage } from "./pages/MatchesPage";
 import { PlayersPage } from "./pages/PlayersPage";
 import { HeadToHeadPage } from "./pages/HeadToHeadPage";
+import { RecommendationsPage } from "./pages/RecommendationsPage";
 
 export default function App() {
   const [players, setPlayers] = useState<PlayerStats[]>([]);
@@ -240,6 +241,7 @@ export default function App() {
               <Route path="matches" element={<MatchesPage />} />
               <Route path="players" element={<PlayersPage />} />
               <Route path="head-to-head" element={<HeadToHeadPage />} />
+              <Route path="recommendations" element={<RecommendationsPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

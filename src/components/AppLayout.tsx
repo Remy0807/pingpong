@@ -5,7 +5,8 @@ const navLinks = [
   { to: "/", label: "Dashboard" },
   { to: "/matches", label: "Wedstrijden" },
   { to: "/players", label: "Spelers" },
-  { to: "/head-to-head", label: "Onderlinge resultaten" }
+  { to: "/head-to-head", label: "Onderlinge resultaten" },
+  { to: "/recommendations", label: "Aanbevolen duels" }
 ];
 
 export function AppLayout() {

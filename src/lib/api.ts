@@ -1,4 +1,9 @@
-import type { Match, PlayerStats, SeasonSummary } from "../types";
+import type {
+  Match,
+  MatchRecommendation,
+  PlayerStats,
+  SeasonSummary,
+} from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -111,4 +116,19 @@ export type SeasonsResponse = {
 
 export function getSeasons(): Promise<SeasonsResponse> {
   return request<SeasonsResponse>("/api/seasons");
+}
+
+export type RecommendationsResponse = {
+  generatedAt: string;
+  season: {
+    id: number;
+    name: string;
+    startDate: string;
+    endDate: string;
+  };
+  recommendations: MatchRecommendation[];
+};
+
+export function getMatchRecommendations(): Promise<RecommendationsResponse> {
+  return request<RecommendationsResponse>("/api/recommendations");
 }

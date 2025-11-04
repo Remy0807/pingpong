@@ -5,9 +5,11 @@ import {
   useState,
   type ChangeEvent,
 } from "react";
+import { BadgeLegend } from "../components/BadgeLegend";
 import { Leaderboard, type LeaderboardEntry } from "../components/Leaderboard";
 import { MatchesTable } from "../components/MatchesTable";
 import { SeasonOverview } from "../components/SeasonOverview";
+import { SeasonHighlightCard } from "../components/SeasonHighlightCard";
 import { useAppData } from "../context/AppDataContext";
 
 export function DashboardPage() {
@@ -39,6 +41,71 @@ export function DashboardPage() {
     }
     return seasons.find((season) => season.id === selectedScope) ?? null;
   }, [selectedScope, seasons]);
+
+  const seasonMatches = useMemo(() => {
+    if (typeof selectedScope !== "number") {
+      return [];
+    }
+    return matches
+      .filter((match) => match.season?.id === selectedScope)
+      .sort(
+        (a, b) =>
+          new Date(a.playedAt).getTime() - new Date(b.playedAt).getTime()
+      );
+  }, [matches, selectedScope]);
+
+  const ratingTrends = useMemo(() => {
+    if (typeof selectedScope !== "number") {
+      return new Map<number, number[]>();
+    }
+
+    const BASE_RATING = 1000;
+    const K = 32;
+
+    const playerRatings = new Map<number, number>();
+    const history = new Map<number, number[]>();
+
+    const calculateDelta = (Ra: number, Rb: number, scoreA: number) => {
+      const expectedA = 1 / (1 + 10 ** ((Rb - Ra) / 400));
+      return Math.round(K * (scoreA - expectedA));
+    };
+
+    seasonMatches.forEach((match) => {
+      const p1 = match.playerOneId;
+      const p2 = match.playerTwoId;
+
+      const currentRatingOne = playerRatings.get(p1) ?? BASE_RATING;
+      const currentRatingTwo = playerRatings.get(p2) ?? BASE_RATING;
+
+      const scoreOne = match.winnerId === p1 ? 1 : 0;
+      const scoreTwo = 1 - scoreOne;
+
+      const deltaOne =
+        match.playerOneEloDelta ??
+        calculateDelta(currentRatingOne, currentRatingTwo, scoreOne);
+      const deltaTwo =
+        match.playerTwoEloDelta ??
+        calculateDelta(currentRatingTwo, currentRatingOne, scoreTwo);
+
+      const nextRatingOne = currentRatingOne + deltaOne;
+      const nextRatingTwo = currentRatingTwo + deltaTwo;
+
+      if (!history.has(p1)) {
+        history.set(p1, [currentRatingOne]);
+      }
+      if (!history.has(p2)) {
+        history.set(p2, [currentRatingTwo]);
+      }
+
+      history.get(p1)!.push(nextRatingOne);
+      history.get(p2)!.push(nextRatingTwo);
+
+      playerRatings.set(p1, nextRatingOne);
+      playerRatings.set(p2, nextRatingTwo);
+    });
+
+    return history;
+  }, [seasonMatches, selectedScope]);
 
   const leaderboardEntries = useMemo<LeaderboardEntry[]>(() => {
     if (selectedScope === "overall") {
@@ -72,8 +139,29 @@ export function DashboardPage() {
       winRate: standing.winRate,
       pointDifferential: standing.pointDifferential,
       rating: standing.rating,
+      ratingTrend: ratingTrends.get(standing.player.id),
     }));
-  }, [players, seasons, selectedScope]);
+  }, [players, seasons, selectedScope, ratingTrends]);
+
+  const seasonHighlight = useMemo(() => {
+    if (typeof selectedScope !== "number") {
+      return null;
+    }
+    if (!seasonMatches.length) {
+      return null;
+    }
+
+    return seasonMatches.reduce<{
+      match: (typeof seasonMatches)[number];
+      total: number;
+    } | null>((best, match) => {
+      const total = match.playerOnePoints + match.playerTwoPoints;
+      if (!best || total > best.total) {
+        return { match, total };
+      }
+      return best;
+    }, null);
+  }, [seasonMatches, selectedScope]);
 
   const stats = useMemo(() => {
     const activePlayers = leaderboardEntries.filter((entry) => entry.matches > 0);
@@ -212,10 +300,19 @@ export function DashboardPage() {
           <Leaderboard entries={leaderboardEntries} />
         </div>
         <div className="hidden md:block space-y-4">
-          <h2 className="text-lg font-semibold text-white">
-            Laatste resultaten
-          </h2>
-          <MatchesTable matches={recentMatches} />
+          <div>
+            <h2 className="text-lg font-semibold text-white">
+              Laatste resultaten
+            </h2>
+            <MatchesTable matches={recentMatches} />
+          </div>
+          {seasonHighlight ? (
+            <SeasonHighlightCard
+              match={seasonHighlight.match}
+              subtitle={`Meeste punten (${seasonHighlight.total} totaal)`}
+            />
+          ) : null}
+          <BadgeLegend />
         </div>
       </section>
 
@@ -235,6 +332,33 @@ export function DashboardPage() {
 
       <div className="hidden md:block">
         <SeasonOverview seasons={seasons} currentSeasonId={currentSeasonId} />
+      </div>
+
+      {seasonHighlight ? (
+        <div className="md:hidden">
+          <details className="glass-card rounded-xl p-4">
+            <summary className="cursor-pointer text-lg font-semibold text-white">
+              Match van het seizoen
+            </summary>
+            <div className="mt-4">
+              <SeasonHighlightCard
+                match={seasonHighlight.match}
+                subtitle={`Meeste punten (${seasonHighlight.total} totaal)`}
+              />
+            </div>
+          </details>
+        </div>
+      ) : null}
+
+      <div className="md:hidden">
+        <details className="glass-card rounded-xl p-4">
+          <summary className="cursor-pointer text-lg font-semibold text-white">
+            Badges uitgelegd
+          </summary>
+          <div className="mt-4">
+            <BadgeLegend />
+          </div>
+        </details>
       </div>
     </div>
   );
