@@ -6,7 +6,7 @@ const navLinks = [
   { to: "/matches", label: "Wedstrijden" },
   { to: "/players", label: "Spelers" },
   { to: "/head-to-head", label: "Onderlinge resultaten" },
-  { to: "/recommendations", label: "Aanbevolen duels" }
+  { to: "/recommendations", label: "Aanbevolen duels" },
 ];
 
 export function AppLayout() {
@@ -18,13 +18,15 @@ export function AppLayout() {
       <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col px-4 pb-16 pt-8 lg:px-6">
         <header className="flex flex-col gap-6 rounded-2xl border border-white/5 bg-slate-950/40 p-6 shadow-card backdrop-blur md:flex-row md:items-center md:justify-between">
           <div className="space-y-3">
-            <p className="text-xs uppercase tracking-[0.6em] text-axoft-200">Axoft Pingpong</p>
+            <p className="text-xs uppercase tracking-[0.6em] text-axoft-200">
+              PingPong Scores
+            </p>
             <h1 className="text-3xl font-semibold text-white md:text-4xl">
               Houd de competitie scherp &amp; overzichtelijk
             </h1>
             <p className="max-w-xl text-sm text-slate-300">
-              Registreer potjes, analyseer statistieken en ontdek wie binnen Axoft de ultieme
-              pingpongkampioen is.
+              Registreer potjes, analyseer statistieken en ontdek wie binnen
+              Axoft de ultieme pingpongkampioen is.
             </p>
           </div>
           <div className="flex flex-col gap-4 md:min-w-[220px]">
@@ -47,7 +49,9 @@ export function AppLayout() {
               ))}
             </nav>
             <div className="glass-card flex flex-col gap-2 rounded-xl p-4 text-sm text-white">
-              <span className="text-xs uppercase tracking-widest text-axoft-200/80">Totaal</span>
+              <span className="text-xs uppercase tracking-widest text-axoft-200/80">
+                Totaal
+              </span>
               <div className="flex justify-between">
                 <span className="text-slate-300">Spelers</span>
                 <span className="font-semibold">{players.length}</span>
