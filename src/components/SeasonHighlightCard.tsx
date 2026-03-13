@@ -1,4 +1,5 @@
 import type { Match } from "../types";
+import { EloIcon } from "./EloIcon";
 
 type SeasonHighlightProps = {
   match: Match;
@@ -54,12 +55,19 @@ export function SeasonHighlightCard({
             {formatDate(match.playedAt)}
           </p>
           <p className="text-xs text-slate-400">
-            Δ Elo:{" "}
-            {match.playerOneEloDelta != null
-              ? `${match.playerOneEloDelta >= 0 ? "+" : ""}${
-                  match.playerOneEloDelta
-                } (${match.playerOne.name})`
-              : "n.v.t."}
+            <span className="inline-flex items-center gap-2">
+              <EloIcon
+                className="h-3.5 w-3.5 text-axoft-200"
+                title="Elo-wijziging"
+              />
+              <span>
+                {match.playerOneEloDelta != null
+                  ? `${match.playerOneEloDelta >= 0 ? "+" : ""}${
+                      match.playerOneEloDelta
+                    } (${match.playerOne.name})`
+                  : "n.v.t."}
+              </span>
+            </span>
           </p>
         </div>
       </div>

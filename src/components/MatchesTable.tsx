@@ -1,7 +1,12 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import type { Match } from "../types";
+import { EloIcon } from "./EloIcon";
+import { buildMatchInsights, getRivalryPath } from "../lib/matchInsights";
 
 type MatchesTableProps = {
   matches: Match[];
+  contextMatches?: Match[];
   onEdit?: (match: Match) => void;
   onDelete?: (match: Match) => void;
   pendingDeleteId?: number | null;
@@ -16,10 +21,88 @@ const dateTimeFormatter = new Intl.DateTimeFormat("nl-NL", {
 
 export function MatchesTable({
   matches,
+  contextMatches,
   onEdit,
   onDelete,
   pendingDeleteId,
 }: MatchesTableProps) {
+  const [flippedMatchIds, setFlippedMatchIds] = useState<Set<number>>(
+    () => new Set()
+  );
+  const previousScoresRef = useRef<Map<number, string>>(new Map());
+  const insightsByMatchId = useMemo(
+    () => buildMatchInsights(contextMatches ?? matches),
+    [contextMatches, matches]
+  );
+
+  useEffect(() => {
+    const previousScores = previousScoresRef.current;
+    const nextScores = new Map<number, string>();
+    const changedIds: number[] = [];
+
+    matches.forEach((match) => {
+      const scoreKey = `${match.playerOnePoints}-${match.playerTwoPoints}`;
+      nextScores.set(match.id, scoreKey);
+
+      const previous = previousScores.get(match.id);
+      if (previous !== undefined && previous !== scoreKey) {
+        changedIds.push(match.id);
+      }
+
+      if (previousScores.size > 0 && previous === undefined) {
+        changedIds.push(match.id);
+      }
+    });
+
+    previousScoresRef.current = nextScores;
+
+    if (!changedIds.length) {
+      return;
+    }
+
+    setFlippedMatchIds(new Set(changedIds));
+    const timeoutId = window.setTimeout(() => {
+      setFlippedMatchIds(new Set());
+    }, 900);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [matches]);
+
+  const badgeClassByTone = {
+    axoft:
+      "border-axoft-400/40 bg-axoft-500/10 text-axoft-100",
+    emerald:
+      "border-emerald-400/40 bg-emerald-500/10 text-emerald-100",
+    amber:
+      "border-amber-400/40 bg-amber-500/10 text-amber-100",
+    rose:
+      "border-rose-400/40 bg-rose-500/10 text-rose-100",
+  } as const;
+
+  const renderHighlights = (match: Match) => {
+    const insight = insightsByMatchId.get(match.id);
+    const rivalryPath = getRivalryPath(match.playerOneId, match.playerTwoId);
+
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {insight?.badges.map((badge) => (
+          <span
+            key={`${match.id}-${badge.id}`}
+            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] ${badgeClassByTone[badge.tone]}`}
+          >
+            {badge.label}
+          </span>
+        ))}
+        <Link
+          to={rivalryPath}
+          className="inline-flex items-center rounded-full border border-white/15 bg-slate-900/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-slate-200 transition hover:border-axoft-400/60 hover:text-white"
+        >
+          Rivalry
+        </Link>
+      </div>
+    );
+  };
+
   if (!matches.length) {
     return (
       <div className="glass-card rounded-xl p-6 text-center text-slate-400">
@@ -59,16 +142,25 @@ export function MatchesTable({
                 <span className="text-xs uppercase tracking-widest text-slate-400">
                   Score
                 </span>
-                <span className="text-lg font-semibold text-white">
+                <span
+                  className={`text-lg font-semibold text-white ${
+                    flippedMatchIds.has(match.id) ? "score-flip" : ""
+                  }`}
+                >
                   {match.playerOnePoints} - {match.playerTwoPoints}
                 </span>
               </div>
+              {renderHighlights(match)}
 
               {/* Elo changes (mobile) */}
               <div className="mt-2 flex items-center gap-4">
                 <div className="text-xs text-slate-400">
-                  <div className="uppercase tracking-widest">
-                    Elo Δ {match.playerOne.name}
+                  <div className="flex items-center gap-2 uppercase tracking-widest">
+                    <EloIcon
+                      className="h-3.5 w-3.5 text-axoft-200"
+                      ariaHidden
+                    />
+                    <span>Elo {match.playerOne.name}</span>
                   </div>
                   <div>
                     {match.playerOneEloDelta != null ? (
@@ -88,8 +180,12 @@ export function MatchesTable({
                   </div>
                 </div>
                 <div className="text-xs text-slate-400">
-                  <div className="uppercase tracking-widest">
-                    Elo Δ {match.playerTwo.name}
+                  <div className="flex items-center gap-2 uppercase tracking-widest">
+                    <EloIcon
+                      className="h-3.5 w-3.5 text-axoft-200"
+                      ariaHidden
+                    />
+                    <span>Elo {match.playerTwo.name}</span>
                   </div>
                   <div>
                     {match.playerTwoEloDelta != null ? (
@@ -146,9 +242,18 @@ export function MatchesTable({
               <th className="px-4 py-3 text-left">Speler A</th>
               <th className="px-4 py-3 text-left">Speler B</th>
               <th className="px-4 py-3 text-left">Score</th>
+              <th className="px-4 py-3 text-left">Highlights</th>
               <th className="px-4 py-3 text-left">Winnaar</th>
               <th className="px-4 py-3 text-left">Seizoen</th>
-              <th className="px-4 py-3 text-left">Elo Δ</th>
+              <th className="px-4 py-3 text-left">
+                <span className="inline-flex items-center gap-2">
+                  <EloIcon
+                    className="h-4 w-4 text-axoft-200"
+                    title="Elo-wijziging"
+                  />
+                  Elo-wijziging
+                </span>
+              </th>
               {(onEdit || onDelete) && (
                 <th className="px-4 py-3 text-left">Acties</th>
               )}
@@ -169,7 +274,29 @@ export function MatchesTable({
                     {match.playerTwo.name}
                   </td>
                   <td className="px-4 py-3 text-slate-100">
-                    {match.playerOnePoints} - {match.playerTwoPoints}
+                    <span className={flippedMatchIds.has(match.id) ? "score-flip" : ""}>
+                      {match.playerOnePoints} - {match.playerTwoPoints}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-200">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {(insightsByMatchId.get(match.id)?.badges ?? []).map(
+                        (badge) => (
+                          <span
+                            key={`${match.id}-${badge.id}`}
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] ${badgeClassByTone[badge.tone]}`}
+                          >
+                            {badge.label}
+                          </span>
+                        )
+                      )}
+                      <Link
+                        to={getRivalryPath(match.playerOneId, match.playerTwoId)}
+                        className="inline-flex items-center rounded-full border border-white/15 bg-slate-900/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-slate-200 transition hover:border-axoft-400/60 hover:text-white"
+                      >
+                        Rivalry
+                      </Link>
+                    </div>
                   </td>
                   <td className="px-4 py-3 font-semibold text-emerald-300">
                     {match.winner.name}

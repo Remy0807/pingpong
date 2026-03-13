@@ -1,24 +1,27 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { PlayerForm } from "../components/PlayerForm";
 import { PlayerEditForm } from "../components/PlayerEditForm";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Modal } from "../components/Modal";
 import { useAppData } from "../context/AppDataContext";
 import type { PlayerStats } from "../types";
+import type { PlayerBadge } from "../../shared/badges";
 
-const BadgeList = ({ badges }: { badges: string[] }) => {
+const BadgeList = ({ badges }: { badges: PlayerBadge[] }) => {
   if (!badges.length) {
     return null;
   }
 
   return (
     <div className="mt-4 flex flex-wrap gap-2">
-      {badges.map((badge, index) => (
+      {badges.map((badge) => (
         <span
-          key={`${badge}-${index}`}
-          className="rounded-full border border-axoft-500/30 bg-axoft-500/10 px-3 py-1 text-xs font-medium text-axoft-200"
+          key={badge.id}
+          className="group rounded-full border border-axoft-500/30 bg-axoft-500/10 px-3 py-1 text-xs font-medium text-axoft-200 transition hover:border-axoft-300 hover:bg-axoft-400/20"
+          title={badge.description}
         >
-          {badge}
+          {badge.label}
         </span>
       ))}
     </div>
@@ -143,6 +146,14 @@ export function PlayersPage() {
                   </button>
                 </div>
               </header>
+              <div className="mt-4 flex gap-2">
+                <Link
+                  to={`/players/${entry.player.id}`}
+                  className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-axoft-100 transition hover:border-axoft-400 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-axoft-400/40"
+                >
+                  Bekijk profiel
+                </Link>
+              </div>
 
               <dl className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-300">
                 <div>

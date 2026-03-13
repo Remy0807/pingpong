@@ -1,18 +1,22 @@
 import { createContext, useContext } from "react";
-import type { Match, PlayerStats, SeasonSummary } from "../types";
-import type { MatchPayload } from "../lib/api";
+import type { DoublesMatch, Match, PlayerStats, SeasonSummary } from "../types";
+import type { DoublesMatchPayload, MatchPayload } from "../lib/api";
 
 export type AppDataContextValue = {
   players: PlayerStats[];
   matches: Match[];
+  doublesMatches: DoublesMatch[];
   seasons: SeasonSummary[];
   currentSeasonId: number | null;
   loading: boolean;
   error: string | null;
   savingPlayer: boolean;
   savingMatch: boolean;
+  savingDoublesMatch: boolean;
   updatingMatch: boolean;
+  updatingDoublesMatch: boolean;
   deletingMatchId: number | null;
+  deletingDoublesMatchId: number | null;
   updatingPlayer: boolean;
   deletingPlayerId: number | null;
   createPlayer: (name: string) => Promise<void>;
@@ -21,6 +25,9 @@ export type AppDataContextValue = {
   createMatch: (payload: MatchPayload) => Promise<void>;
   updateMatch: (id: number, payload: MatchPayload) => Promise<void>;
   deleteMatch: (id: number) => Promise<void>;
+  createDoublesMatch: (payload: DoublesMatchPayload) => Promise<void>;
+  updateDoublesMatch: (id: number, payload: DoublesMatchPayload) => Promise<void>;
+  deleteDoublesMatch: (id: number) => Promise<void>;
   refreshAll: () => Promise<void>;
   setError: (message: string | null) => void;
 };

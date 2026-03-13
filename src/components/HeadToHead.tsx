@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import type { Match, PlayerStats } from "../types";
+import { getRivalryPath } from "../lib/matchInsights";
 
 type HeadToHeadProps = {
   players: PlayerStats[];
@@ -261,6 +263,14 @@ export function HeadToHead({ players, matches }: HeadToHeadProps) {
           </div>
         ) : (
           <>
+            <div className="mt-5 flex">
+              <Link
+                to={getRivalryPath(selectedSummary.playerAId, selectedSummary.playerBId)}
+                className="inline-flex items-center rounded-full border border-axoft-400/40 bg-axoft-500/10 px-4 py-1.5 text-xs uppercase tracking-[0.2em] text-axoft-200 transition hover:border-axoft-300 hover:text-white"
+              >
+                Open rivalry page
+              </Link>
+            </div>
             <div className="mt-6 grid gap-4 md:grid-cols-[repeat(2,minmax(0,1fr))]">
               <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-5">
                 <div className="flex items-center justify-between">

@@ -1,47 +1,65 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+const PINGPONG_CODE = (
+  import.meta.env.VITE_PINGPONG_CODE || "AXOFT"
+).toUpperCase();
+const PINGPONG_FLAG = "pp_access_granted";
+
+type GateView = "choice" | "download" | "pingpong";
 
 export function SoftGate({ children }: { children: React.ReactNode }) {
-  const [granted, setGranted] = useState<boolean>(false);
+  const [pingpongGranted, setPingpongGranted] = useState(false);
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<"choice" | "download" | "login">("choice");
+  const [view, setView] = useState<GateView>("choice");
   const inputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     try {
-      const flag = sessionStorage.getItem("pp_access_granted");
-      if (flag === "1") {
-        setGranted(true);
-      }
+      setPingpongGranted(sessionStorage.getItem(PINGPONG_FLAG) === "1");
     } catch (e) {
       // ignore sessionStorage errors
     }
   }, []);
 
   const check = () => {
-    // simple, intentional plaintext check as requested
-    if (value.toUpperCase() === "AXOFT") {
+    const normalized = value.trim().toUpperCase();
+    if (!normalized) {
+      setError("Vul een code in");
+      return;
+    }
+    if (normalized === PINGPONG_CODE) {
       try {
-        sessionStorage.setItem("pp_access_granted", "1");
+        sessionStorage.setItem(PINGPONG_FLAG, "1");
       } catch (e) {
         // ignore
       }
-      setGranted(true);
+      setPingpongGranted(true);
+      navigate("/", { replace: true });
       setError(null);
+      setValue("");
     } else {
       setError("Onjuiste code");
     }
   };
 
   useEffect(() => {
-    if (view === "login") {
+    if (view === "pingpong") {
       inputRef.current?.focus();
-    } else {
-      setError(null);
     }
+    setError(null);
+    setValue("");
   }, [view]);
 
-  if (granted) {
+  useEffect(() => {
+    if (!pingpongGranted) {
+      setView("choice");
+    }
+  }, [pingpongGranted]);
+
+  if (pingpongGranted) {
     return <>{children}</>;
   }
 
@@ -66,7 +84,10 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
               </button>
               <button
                 type="button"
-                onClick={() => setView("login")}
+                onClick={() => {
+                  setView("pingpong");
+                  navigate("/", { replace: true });
+                }}
                 className="inline-flex w-full items-center justify-center rounded-lg bg-axoft-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-axoft-400"
               >
                 Log in op het Ping Pong dashboard
@@ -103,7 +124,10 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
             </div>
             <button
               type="button"
-              onClick={() => setView("choice")}
+              onClick={() => {
+                setView("choice");
+                navigate("/", { replace: true });
+              }}
               className="mt-6 inline-flex items-center justify-center text-sm font-medium text-axoft-100 hover:text-white"
             >
               Terug naar keuze
@@ -111,7 +135,7 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
           </>
         ) : null}
 
-        {view === "login" ? (
+        {view === "pingpong" ? (
           <>
             <h2 className="text-lg font-semibold text-white">
               Toegangscode vereist
@@ -149,7 +173,10 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
             </div>
             <button
               type="button"
-              onClick={() => setView("choice")}
+              onClick={() => {
+                setView("choice");
+                navigate("/", { replace: true });
+              }}
               className="mt-6 inline-flex items-center justify-center text-sm font-medium text-axoft-100 hover:text-white"
             >
               Terug naar keuze

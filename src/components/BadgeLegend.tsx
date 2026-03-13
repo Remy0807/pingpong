@@ -1,16 +1,20 @@
-import { useState } from "react";
-
-const badgeDescriptions: Record<string, string> = {
-  "In vorm": "Actieve winstreak van minimaal drie wedstrijden.",
-  "Perfecte maand": "Minstens drie wedstrijden gespeeld en geen enkele verloren.",
-  Dominantie:
-    "Ten minste vijf wedstrijden gespeeld en 75% daarvan gewonnen in het seizoen.",
-  Marathonspeler: "Tien of meer wedstrijden in hetzelfde seizoen gespeeld.",
-  Winmachine: "Een winstreak van vijf of meer op enig moment bereikt.",
-};
+import { useMemo, useState } from "react";
+import { badgeList } from "../../shared/badges";
 
 export function BadgeLegend() {
   const [open, setOpen] = useState(false);
+  const grouped = useMemo(() => {
+    return badgeList.reduce(
+      (acc, badge) => {
+        if (!acc[badge.category]) {
+          acc[badge.category] = [];
+        }
+        acc[badge.category].push(badge);
+        return acc;
+      },
+      {} as Record<string, typeof badgeList[number][]>
+    );
+  }, []);
 
   return (
     <div className="glass-card rounded-2xl border border-white/10 bg-slate-950/40 p-4 text-sm text-slate-200">
@@ -32,19 +36,30 @@ export function BadgeLegend() {
         </button>
       </div>
       {open ? (
-        <dl className="mt-4 space-y-3">
-          {Object.entries(badgeDescriptions).map(([badge, description]) => (
-            <div
-              key={badge}
-              className="rounded-xl border border-white/5 bg-slate-950/70 px-3 py-2"
-            >
-              <dt className="text-xs uppercase tracking-widest text-axoft-300">
-                {badge}
-              </dt>
-              <dd className="mt-1 text-xs text-slate-300">{description}</dd>
-            </div>
+        <div className="mt-4 space-y-4">
+          {Object.entries(grouped).map(([category, badges]) => (
+            <section key={category}>
+              <h4 className="text-[11px] uppercase tracking-[0.4em] text-axoft-200/80">
+                {category}
+              </h4>
+              <dl className="mt-2 space-y-3">
+                {badges.map((badge) => (
+                  <div
+                    key={badge.id}
+                    className="rounded-xl border border-white/5 bg-slate-950/70 px-3 py-2"
+                  >
+                    <dt className="text-xs font-semibold uppercase tracking-widest text-axoft-300">
+                      {badge.label}
+                    </dt>
+                    <dd className="mt-1 text-xs text-slate-300">
+                      {badge.description}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
           ))}
-        </dl>
+        </div>
       ) : null}
     </div>
   );

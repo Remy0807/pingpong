@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { MatchesTable } from "../components/MatchesTable";
 import { MatchEditorModal } from "../components/MatchEditorModal";
 import { MatchForm } from "../components/MatchForm";
@@ -11,6 +12,16 @@ import {
 } from "../components/MatchFilters";
 import { useAppData } from "../context/AppDataContext";
 import type { Match } from "../types";
+
+type MatchViewMode = "grouped" | "table";
+
+const monthLabelFormatter = new Intl.DateTimeFormat("nl-NL", {
+  month: "long",
+  year: "numeric",
+});
+
+const capitalize = (value: string) =>
+  value.charAt(0).toUpperCase() + value.slice(1);
 
 export function MatchesPage() {
   const {
@@ -31,6 +42,7 @@ export function MatchesPage() {
   const [createPlayerOpen, setCreatePlayerOpen] = useState(false);
   const [createMatchOpen, setCreateMatchOpen] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<Match | null>(null);
+  const [viewMode, setViewMode] = useState<MatchViewMode>("grouped");
 
   const [filters, setFilters] = useState<MatchFiltersType>({});
 
@@ -76,6 +88,67 @@ export function MatchesPage() {
       );
   }, [matches, filters]);
 
+  const groupedMatches = useMemo(() => {
+    const byMonth = new Map<
+      string,
+      {
+        label: string;
+        matches: Match[];
+      }
+    >();
+
+    filteredAndSortedMatches.forEach((match) => {
+      const playedAt = new Date(match.playedAt);
+      const key = `${playedAt.getFullYear()}-${playedAt.getMonth() + 1}`;
+      const existing = byMonth.get(key);
+      if (existing) {
+        existing.matches.push(match);
+        return;
+      }
+
+      byMonth.set(key, {
+        label: capitalize(monthLabelFormatter.format(playedAt)),
+        matches: [match],
+      });
+    });
+
+    return Array.from(byMonth.entries()).map(([key, value]) => ({
+      key,
+      label: value.label,
+      matches: value.matches,
+    }));
+  }, [filteredAndSortedMatches]);
+
+  const filteredSummary = useMemo(() => {
+    const uniquePlayers = new Set<number>();
+    let totalPoints = 0;
+    let zeroElevenCount = 0;
+
+    filteredAndSortedMatches.forEach((match) => {
+      uniquePlayers.add(match.playerOneId);
+      uniquePlayers.add(match.playerTwoId);
+      totalPoints += match.playerOnePoints + match.playerTwoPoints;
+
+      if (
+        (match.playerOnePoints === 11 && match.playerTwoPoints === 0) ||
+        (match.playerOnePoints === 0 && match.playerTwoPoints === 11)
+      ) {
+        zeroElevenCount += 1;
+      }
+    });
+
+    const avgPoints = filteredAndSortedMatches.length
+      ? (totalPoints / filteredAndSortedMatches.length).toFixed(1)
+      : "0.0";
+
+    return {
+      count: filteredAndSortedMatches.length,
+      uniquePlayers: uniquePlayers.size,
+      avgPoints,
+      zeroElevenCount,
+    };
+  }, [filteredAndSortedMatches]);
+
   const handleCreatePlayer = async (name: string) => {
     await createPlayer(name);
     setCreatePlayerOpen(false);
@@ -109,6 +182,12 @@ export function MatchesPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
+          <Link
+            to="/doubles"
+            className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-axoft-400 hover:text-axoft-100 focus:outline-none focus:ring-2 focus:ring-axoft-500/30"
+          >
+            Naar 2v2
+          </Link>
           <button
             type="button"
             onClick={() => setCreateMatchOpen(true)}
@@ -135,12 +214,117 @@ export function MatchesPage() {
           filters={filters}
           onChange={setFilters}
         />
-        <MatchesTable
-          matches={filteredAndSortedMatches}
-          onEdit={(match) => setEditingMatch(match)}
-          onDelete={(match) => setDeleteCandidate(match)}
-          pendingDeleteId={deletingMatchId}
-        />
+        <div className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-axoft-200/80">
+              Gefilterd
+            </p>
+            <p className="mt-1 text-2xl font-semibold text-white">
+              {filteredSummary.count}
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-axoft-200/80">
+              Spelers
+            </p>
+            <p className="mt-1 text-2xl font-semibold text-white">
+              {filteredSummary.uniquePlayers}
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-axoft-200/80">
+              Gem. punten
+            </p>
+            <p className="mt-1 text-2xl font-semibold text-white">
+              {filteredSummary.avgPoints}
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3">
+            <p className="text-[11px] uppercase tracking-[0.3em] text-axoft-200/80">
+              Uitslag 11-0
+            </p>
+            <p className="mt-1 text-2xl font-semibold text-white">
+              {filteredSummary.zeroElevenCount}
+            </p>
+          </div>
+        </div>
+
+        <div className="inline-flex rounded-xl border border-white/10 bg-slate-950/50 p-1">
+          <button
+            type="button"
+            onClick={() => setViewMode("grouped")}
+            className={`rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition ${
+              viewMode === "grouped"
+                ? "bg-axoft-500 text-slate-950"
+                : "text-slate-300 hover:text-white"
+            }`}
+          >
+            Gegroepeerd
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("table")}
+            className={`rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition ${
+              viewMode === "table"
+                ? "bg-axoft-500 text-slate-950"
+                : "text-slate-300 hover:text-white"
+            }`}
+          >
+            Tabel
+          </button>
+        </div>
+
+        {viewMode === "table" ? (
+          <MatchesTable
+            matches={filteredAndSortedMatches}
+            contextMatches={matches}
+            onEdit={(match) => setEditingMatch(match)}
+            onDelete={(match) => setDeleteCandidate(match)}
+            pendingDeleteId={deletingMatchId}
+          />
+        ) : groupedMatches.length ? (
+          <div className="space-y-3">
+            {groupedMatches.map((group, index) => (
+              <details
+                key={group.key}
+                className="rounded-2xl border border-white/10 bg-slate-950/40 p-4"
+                open={index === 0}
+              >
+                <summary className="cursor-pointer list-none">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">
+                        {group.label}
+                      </h3>
+                      <p className="text-xs uppercase tracking-[0.25em] text-slate-400">
+                        {group.matches.length}{" "}
+                        {group.matches.length === 1
+                          ? "wedstrijd"
+                          : "wedstrijden"}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-white/10 bg-slate-900/70 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-axoft-200">
+                      Open/sluit
+                    </span>
+                  </div>
+                </summary>
+                <div className="mt-4">
+                  <MatchesTable
+                    matches={group.matches}
+                    contextMatches={matches}
+                    onEdit={(match) => setEditingMatch(match)}
+                    onDelete={(match) => setDeleteCandidate(match)}
+                    pendingDeleteId={deletingMatchId}
+                  />
+                </div>
+              </details>
+            ))}
+          </div>
+        ) : (
+          <div className="glass-card rounded-xl p-6 text-center text-slate-400">
+            Geen wedstrijden die aan deze filters voldoen.
+          </div>
+        )}
       </section>
 
       <MatchEditorModal

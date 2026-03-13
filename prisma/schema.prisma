@@ -17,6 +17,10 @@ model Player {
   matchesAsPlayerTwo Match[]  @relation("PlayerTwoMatches")
   matchesWon         Match[]  @relation("MatchWinner")
   seasonsChampion    Season[] @relation("SeasonChampion")
+  doublesAsTeamOneA  DoublesMatch[] @relation("DoublesTeamOneA")
+  doublesAsTeamOneB  DoublesMatch[] @relation("DoublesTeamOneB")
+  doublesAsTeamTwoA  DoublesMatch[] @relation("DoublesTeamTwoA")
+  doublesAsTeamTwoB  DoublesMatch[] @relation("DoublesTeamTwoB")
 }
 
 model Match {
@@ -44,6 +48,29 @@ model Season {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
   matches    Match[]
+  doublesMatches DoublesMatch[]
   champion   Player?  @relation("SeasonChampion", fields: [championId], references: [id])
   championId Int?
+
+  @@unique([startDate, endDate])
+}
+
+model DoublesMatch {
+  id             Int      @id @default(autoincrement())
+  teamOnePlayerA Player   @relation("DoublesTeamOneA", fields: [teamOnePlayerAId], references: [id])
+  teamOnePlayerAId Int
+  teamOnePlayerB Player   @relation("DoublesTeamOneB", fields: [teamOnePlayerBId], references: [id])
+  teamOnePlayerBId Int
+  teamTwoPlayerA Player   @relation("DoublesTeamTwoA", fields: [teamTwoPlayerAId], references: [id])
+  teamTwoPlayerAId Int
+  teamTwoPlayerB Player   @relation("DoublesTeamTwoB", fields: [teamTwoPlayerBId], references: [id])
+  teamTwoPlayerBId Int
+  teamOnePoints  Int
+  teamTwoPoints  Int
+  winnerTeam     Int
+  playedAt       DateTime @default(now())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  season         Season?  @relation(fields: [seasonId], references: [id])
+  seasonId       Int?
 }

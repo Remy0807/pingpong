@@ -15,3 +15,155 @@ body {
 .glass-card {
   @apply bg-slate-900/70 backdrop-blur-lg border border-white/10 shadow-card;
 }
+
+@keyframes glitch-shift {
+  0% {
+    transform: translate(0);
+    opacity: 0.6;
+  }
+  20% {
+    transform: translate(-1px, 1px);
+    opacity: 0.4;
+  }
+  40% {
+    transform: translate(1px, -1px);
+    opacity: 0.7;
+  }
+  60% {
+    transform: translate(-1px, 0);
+    opacity: 0.5;
+  }
+  80% {
+    transform: translate(1px, 1px);
+    opacity: 0.6;
+  }
+  100% {
+    transform: translate(0);
+    opacity: 0.6;
+  }
+}
+
+@keyframes scanlines {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 0 200px;
+  }
+}
+
+@keyframes route-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.995);
+    filter: blur(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes stat-card-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes score-flip {
+  0% {
+    transform: perspective(420px) rotateX(-92deg);
+    opacity: 0.25;
+    color: #67e8f9;
+  }
+  55% {
+    transform: perspective(420px) rotateX(18deg);
+    opacity: 1;
+  }
+  100% {
+    transform: perspective(420px) rotateX(0deg);
+    opacity: 1;
+    color: inherit;
+  }
+}
+
+@layer utilities {
+  .glitch-text {
+    position: relative;
+  }
+
+  .glitch-text::before,
+  .glitch-text::after {
+    content: attr(data-text);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    overflow: hidden;
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .glitch-text::before {
+    color: rgba(56, 189, 248, 0.7);
+    animation: glitch-shift 3.5s infinite;
+  }
+
+  .glitch-text::after {
+    color: rgba(251, 191, 36, 0.6);
+    animation: glitch-shift 4.5s infinite;
+  }
+
+  .scanlines {
+    background-image: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.04) 1px,
+      rgba(255, 255, 255, 0) 2px
+    );
+    background-size: 100% 6px;
+    animation: scanlines 12s linear infinite;
+  }
+
+  .route-transition {
+    animation: route-enter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    transform-origin: center top;
+  }
+
+  .score-flip {
+    display: inline-block;
+    transform-origin: center;
+    backface-visibility: hidden;
+    animation: score-flip 620ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .dashboard-stats-grid .dashboard-stat-card {
+    animation: stat-card-rise 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .dashboard-stats-grid .dashboard-stat-card:nth-child(2) {
+    animation-delay: 80ms;
+  }
+
+  .dashboard-stats-grid .dashboard-stat-card:nth-child(3) {
+    animation-delay: 160ms;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-transition,
+  .score-flip,
+  .dashboard-stats-grid .dashboard-stat-card,
+  .glitch-text::before,
+  .glitch-text::after,
+  .scanlines {
+    animation: none !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}

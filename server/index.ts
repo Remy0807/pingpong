@@ -6,6 +6,11 @@ import express, {
 } from "express";
 import cors from "cors";
 import { PrismaClient, Prisma } from "@prisma/client";
+import {
+  createPlayerBadge,
+  type BadgeId,
+  type PlayerBadge,
+} from "../shared/badges.js";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -39,6 +44,11 @@ app.get(/^(?!\/api\/)/, (req, res) => {
 type PlayerWithRelations = Awaited<
   ReturnType<typeof fetchPlayersWithRelations>
 >[number];
+type SeasonRecord = Prisma.SeasonGetPayload<{}>;
+
+const seasonCreationLocks = new Map<string, Promise<SeasonRecord>>();
+
+const getSeasonKey = (date: Date) => `${date.getFullYear()}-${date.getMonth()}`;
 
 const getSeasonBoundaries = (date: Date) => {
   const start = new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
@@ -60,26 +70,114 @@ const buildSeasonName = (date: Date) => {
   })} ${date.getFullYear()}`.replace(/^\w/, (c) => c.toUpperCase());
 };
 
-async function getOrCreateSeasonForDate(date: Date) {
-  const { start, end } = getSeasonBoundaries(date);
-  const existing = await prisma.season.findFirst({
-    where: {
-      startDate: { lte: date },
-      endDate: { gte: date },
-    },
+async function deduplicateSeasons() {
+  const seasons = await prisma.season.findMany({
+    orderBy: [{ startDate: "asc" }, { id: "asc" }],
   });
 
-  if (existing) {
-    return existing;
+  const groups = new Map<string, SeasonRecord[]>();
+  seasons.forEach((season) => {
+    const key = `${season.startDate.toISOString()}|${season.endDate.toISOString()}`;
+    const bucket = groups.get(key) ?? [];
+    bucket.push(season);
+    groups.set(key, bucket);
+  });
+
+  let removed = 0;
+  for (const group of groups.values()) {
+    if (group.length < 2) {
+      continue;
+    }
+
+    const [primary, ...duplicates] = group;
+    const duplicateIds = duplicates.map((season) => season.id);
+    const fallbackChampionId = duplicates.find(
+      (season) => season.championId != null
+    )?.championId;
+    const nextChampionId = primary.championId ?? fallbackChampionId ?? null;
+
+    await prisma.$transaction(async (tx) => {
+      if (duplicateIds.length) {
+        await tx.match.updateMany({
+          where: { seasonId: { in: duplicateIds } },
+          data: { seasonId: primary.id },
+        });
+        await tx.doublesMatch.updateMany({
+          where: { seasonId: { in: duplicateIds } },
+          data: { seasonId: primary.id },
+        });
+      }
+
+      if (nextChampionId != null && primary.championId == null) {
+        await tx.season.update({
+          where: { id: primary.id },
+          data: { championId: nextChampionId },
+        });
+      }
+
+      if (duplicateIds.length) {
+        await tx.season.deleteMany({
+          where: { id: { in: duplicateIds } },
+        });
+      }
+    });
+
+    removed += duplicateIds.length;
   }
 
-  return prisma.season.create({
-    data: {
-      name: `Seizoen ${buildSeasonName(date)}`,
-      startDate: start,
-      endDate: end,
-    },
-  });
+  return removed;
+}
+
+async function getOrCreateSeasonForDate(date: Date) {
+  const key = getSeasonKey(date);
+  const pending = seasonCreationLocks.get(key);
+  if (pending) {
+    return pending;
+  }
+
+  const operation = (async (): Promise<SeasonRecord> => {
+    const { start, end } = getSeasonBoundaries(date);
+    const existing = await prisma.season.findFirst({
+      where: {
+        startDate: { lte: date },
+        endDate: { gte: date },
+      },
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    try {
+      return await prisma.season.create({
+        data: {
+          name: `Seizoen ${buildSeasonName(date)}`,
+          startDate: start,
+          endDate: end,
+        },
+      });
+    } catch (error) {
+      if (isPrismaErrorWithCode(error) && error.code === "P2002") {
+        const createdByOtherRequest = await prisma.season.findFirst({
+          where: {
+            startDate: start,
+            endDate: end,
+          },
+        });
+        if (createdByOtherRequest) {
+          return createdByOtherRequest;
+        }
+      }
+      throw error;
+    }
+  })();
+
+  seasonCreationLocks.set(key, operation);
+  try {
+    return await operation;
+  } finally {
+    seasonCreationLocks.delete(key);
+  }
 }
 
 const calculatePlayerEnhancements = (
@@ -124,25 +222,89 @@ const calculatePlayerEnhancements = (
     (match) => match.winnerId === player.id
   ).length;
   const seasonLosses = seasonMatches.length - seasonWins;
-  const badges: string[] = [];
+  const badges: PlayerBadge[] = [];
+  const awardBadge = (id: BadgeId, earnedAt?: Date) => {
+    if (badges.some((badge) => badge.id === id)) {
+      return;
+    }
+    const badge = createPlayerBadge(id, earnedAt);
+    if (badge) {
+      badges.push(badge);
+    }
+  };
 
-  if (currentStreak >= 3) {
-    badges.push("In vorm");
+  const lastMatch = matches.length
+    ? matches[matches.length - 1]
+    : undefined;
+  const lastMatchDate = lastMatch?.playedAt;
+  const seasonPoints = seasonMatches.reduce(
+    (acc, match) => {
+      const isPlayerOne = match.playerOneId === player.id;
+      const scored = isPlayerOne ? match.playerOnePoints : match.playerTwoPoints;
+      const conceded = isPlayerOne ? match.playerTwoPoints : match.playerOnePoints;
+      return {
+        for: acc.for + scored,
+        against: acc.against + conceded,
+      };
+    },
+    { for: 0, against: 0 }
+  );
+
+  if (currentStreak >= 3 && lastMatchDate) {
+    awardBadge("in-form", lastMatchDate);
   }
-  if (seasonMatches.length >= 3 && seasonLosses === 0) {
-    badges.push("Perfecte maand");
+  if (seasonMatches.length >= 3 && seasonLosses === 0 && lastMatchDate) {
+    awardBadge("perfect-month", lastMatchDate);
   }
   if (
     seasonMatches.length >= 5 &&
-    seasonWins / (seasonMatches.length || 1) >= 0.75
+    seasonWins / (seasonMatches.length || 1) >= 0.75 &&
+    lastMatchDate
   ) {
-    badges.push("Dominantie");
+    awardBadge("dominance", lastMatchDate);
   }
-  if (seasonMatches.length >= 10) {
-    badges.push("Marathonspeler");
+  if (seasonMatches.length >= 10 && lastMatchDate) {
+    awardBadge("marathoner", lastMatchDate);
   }
-  if (longestStreak >= 5) {
-    badges.push("Winmachine");
+
+  let winMachineDate: Date | undefined;
+  let cleanSheetDate: Date | undefined;
+  let pointsCollectorDate: Date | undefined;
+
+  let streakCounter = 0;
+  for (const match of matches) {
+    const didWin = match.winnerId === player.id;
+    const isPlayerOne = match.playerOneId === player.id;
+    const opponentPoints = isPlayerOne
+      ? match.playerTwoPoints
+      : match.playerOnePoints;
+    if (didWin) {
+      streakCounter += 1;
+      if (streakCounter >= 5 && !winMachineDate) {
+        winMachineDate = match.playedAt;
+      }
+      if (opponentPoints <= 5 && !cleanSheetDate) {
+        cleanSheetDate = match.playedAt;
+      }
+    } else {
+      streakCounter = 0;
+    }
+  }
+
+  if (longestStreak >= 5 && winMachineDate) {
+    awardBadge("win-machine", winMachineDate);
+  }
+  if (cleanSheetDate) {
+    awardBadge("clean-sheet", cleanSheetDate);
+  }
+  if (seasonPoints.for >= 250) {
+    const latestSeasonMatch = seasonMatches.length
+      ? seasonMatches[seasonMatches.length - 1].playedAt
+      : undefined;
+    pointsCollectorDate = latestSeasonMatch ?? lastMatchDate;
+  }
+  if (pointsCollectorDate) {
+    awardBadge("points-collector", pointsCollectorDate);
   }
 
   const championships = championCounts.get(player.id) ?? 0;
@@ -235,8 +397,20 @@ const matchInclude = {
   season: true,
 } as const;
 
+const doublesMatchInclude = {
+  teamOnePlayerA: true,
+  teamOnePlayerB: true,
+  teamTwoPlayerA: true,
+  teamTwoPlayerB: true,
+  season: true,
+} as const;
+
 type MatchWithRelations = Prisma.MatchGetPayload<{
   include: typeof matchInclude;
+}>;
+
+type DoublesMatchWithRelations = Prisma.DoublesMatchGetPayload<{
+  include: typeof doublesMatchInclude;
 }>;
 
 const getChampionCounts = async () => {
@@ -426,23 +600,45 @@ const ensurePastSeasonChampions = async () => {
   );
 };
 
-const getLeaderboardSnapshot = async () => {
-  const [players, currentSeason, championCounts] = await Promise.all([
-    fetchPlayersWithRelations(),
-    getOrCreateSeasonForDate(new Date()),
-    getChampionCounts(),
-  ]);
+type CurrentSeasonTopEntry = {
+  rank: number;
+  playerId: number;
+  name: string;
+  wins: number;
+  losses: number;
+  matches: number;
+  winRate: number;
+  rating: number;
+  pointDifferential: number;
+};
 
-  return players
-    .map((player) =>
-      buildPlayerStats(player, { currentSeason, championCounts })
-    )
-    .sort((a, b) => {
-      if (b.winRate === a.winRate) {
-        return b.pointDifferential - a.pointDifferential;
-      }
-      return b.winRate - a.winRate;
-    });
+const getCurrentSeasonLeaderboardSnapshot = async () => {
+  const currentSeason = await getOrCreateSeasonForDate(new Date());
+  const seasonMatches = await prisma.match.findMany({
+    where: { seasonId: currentSeason.id },
+    include: matchInclude,
+    orderBy: { playedAt: "asc" },
+  });
+
+  const standings = calculateSeasonStandings(seasonMatches);
+  const topFive: CurrentSeasonTopEntry[] = standings
+    .slice(0, 5)
+    .map((entry, index) => ({
+      rank: index + 1,
+      playerId: entry.player.id,
+      name: entry.player.name,
+      wins: entry.wins,
+      losses: entry.losses,
+      matches: entry.matches,
+      winRate: entry.winRate,
+      rating: entry.rating,
+      pointDifferential: entry.pointDifferential,
+    }));
+
+  return {
+    currentSeason,
+    topFive,
+  };
 };
 
 const buildAdaptiveCard = (body: unknown[], actions: unknown[] = []) => ({
@@ -452,6 +648,239 @@ const buildAdaptiveCard = (body: unknown[], actions: unknown[] = []) => ({
   body,
   actions,
 });
+
+const matchDateFormatter = new Intl.DateTimeFormat("nl-NL", {
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+const buildSeasonTopRows = (entries: CurrentSeasonTopEntry[]) => {
+  if (!entries.length) {
+    return [
+      {
+        type: "TextBlock",
+        text: "Nog geen ranking beschikbaar voor het huidige seizoen.",
+        isSubtle: true,
+        wrap: true,
+      },
+    ];
+  }
+
+  const header: unknown = {
+    type: "ColumnSet",
+    spacing: "Small",
+    columns: [
+      {
+        type: "Column",
+        width: "auto",
+        items: [{ type: "TextBlock", text: "#", weight: "Bolder", size: "Small" }],
+      },
+      {
+        type: "Column",
+        width: "stretch",
+        items: [{ type: "TextBlock", text: "Speler", weight: "Bolder", size: "Small" }],
+      },
+      {
+        type: "Column",
+        width: "auto",
+        items: [{ type: "TextBlock", text: "Elo", weight: "Bolder", size: "Small" }],
+      },
+      {
+        type: "Column",
+        width: "auto",
+        items: [
+          { type: "TextBlock", text: "Record", weight: "Bolder", size: "Small" },
+        ],
+      },
+      {
+        type: "Column",
+        width: "auto",
+        items: [
+          { type: "TextBlock", text: "Win%", weight: "Bolder", size: "Small" },
+        ],
+      },
+    ],
+  };
+
+  const rows = entries.map((entry) => ({
+    type: "ColumnSet",
+    spacing: "Small",
+    columns: [
+      {
+        type: "Column",
+        width: "auto",
+        items: [
+          {
+            type: "TextBlock",
+            text: `${entry.rank}`,
+            color: entry.rank === 1 ? "Accent" : "Default",
+          },
+        ],
+      },
+      {
+        type: "Column",
+        width: "stretch",
+        items: [
+          {
+            type: "TextBlock",
+            text: entry.name,
+            weight: entry.rank <= 3 ? "Bolder" : "Default",
+          },
+        ],
+      },
+      {
+        type: "Column",
+        width: "auto",
+        items: [
+          {
+            type: "TextBlock",
+            text: `${entry.rating}`,
+            color: "Good",
+          },
+        ],
+      },
+      {
+        type: "Column",
+        width: "auto",
+        items: [
+          {
+            type: "TextBlock",
+            text: `${entry.wins}W/${entry.losses}L`,
+            wrap: true,
+          },
+        ],
+      },
+      {
+        type: "Column",
+        width: "auto",
+        items: [
+          {
+            type: "TextBlock",
+            text: `${Math.round(entry.winRate * 100)}%`,
+            color: "Accent",
+          },
+        ],
+      },
+    ],
+  }));
+
+  return [header, ...rows];
+};
+
+const buildTeamsMatchCardBody = ({
+  title,
+  subtitle,
+  match,
+  currentSeasonName,
+  topFive,
+}: {
+  title: string;
+  subtitle: string;
+  match: MatchWithRelations;
+  currentSeasonName: string;
+  topFive: CurrentSeasonTopEntry[];
+}) => {
+  const winnerPoints =
+    match.winnerId === match.playerOneId
+      ? match.playerOnePoints
+      : match.playerTwoPoints;
+  const loserPoints =
+    match.winnerId === match.playerOneId
+      ? match.playerTwoPoints
+      : match.playerOnePoints;
+  const margin = winnerPoints - loserPoints;
+
+  return [
+    {
+      type: "TextBlock",
+      text: title,
+      weight: "Bolder",
+      size: "Large",
+    },
+    {
+      type: "TextBlock",
+      text: subtitle,
+      isSubtle: true,
+      spacing: "None",
+      wrap: true,
+    },
+    {
+      type: "Container",
+      style: "emphasis",
+      spacing: "Medium",
+      items: [
+        {
+          type: "ColumnSet",
+          columns: [
+            {
+              type: "Column",
+              width: "stretch",
+              items: [
+                {
+                  type: "TextBlock",
+                  text: `${match.playerOne.name} vs ${match.playerTwo.name}`,
+                  weight: "Bolder",
+                  size: "Medium",
+                  wrap: true,
+                },
+                {
+                  type: "TextBlock",
+                  text: `Winnaar: ${match.winner.name} • Marge: +${margin}`,
+                  spacing: "Small",
+                  wrap: true,
+                },
+                {
+                  type: "TextBlock",
+                  text: `Gespeeld: ${matchDateFormatter.format(match.playedAt)}`,
+                  isSubtle: true,
+                  spacing: "Small",
+                  wrap: true,
+                },
+                {
+                  type: "TextBlock",
+                  text: `Wedstrijdseizoen: ${match.season?.name ?? "Onbekend"}`,
+                  isSubtle: true,
+                  spacing: "None",
+                  wrap: true,
+                },
+              ],
+            },
+            {
+              type: "Column",
+              width: "auto",
+              verticalContentAlignment: "Center",
+              items: [
+                {
+                  type: "TextBlock",
+                  text: "Score",
+                  horizontalAlignment: "Center",
+                  isSubtle: true,
+                  size: "Small",
+                },
+                {
+                  type: "TextBlock",
+                  text: `${match.playerOnePoints} - ${match.playerTwoPoints}`,
+                  size: "ExtraLarge",
+                  weight: "Bolder",
+                  horizontalAlignment: "Center",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      type: "TextBlock",
+      text: `Top 5 huidig seizoen (${currentSeasonName})`,
+      weight: "Bolder",
+      spacing: "Medium",
+    },
+    ...buildSeasonTopRows(topFive),
+  ];
+};
 
 const sendTeamsCard = async (cardContent: unknown) => {
   if (!TEAMS_WEBHOOK_URL) {
@@ -487,128 +916,15 @@ const sendTeamsCard = async (cardContent: unknown) => {
 
 const notifyTeamsMatchCreated = async (match: MatchWithRelations) => {
   try {
-    const leaderboard = await getLeaderboardSnapshot();
-    const body: unknown[] = [
-      {
-        type: "TextBlock",
-        text: "Nieuwe wedstrijd geregistreerd",
-        weight: "Bolder",
-        size: "Large",
-      },
-      {
-        type: "ColumnSet",
-        columns: [
-          {
-            type: "Column",
-            width: 2,
-            items: [
-              {
-                type: "TextBlock",
-                text: `${match.playerOne.name} vs ${match.playerTwo.name}`,
-                weight: "Bolder",
-                size: "Medium",
-                wrap: true,
-              },
-              {
-                type: "TextBlock",
-                text: `Seizoen: ${match.season?.name ?? "Onbekend"}`,
-                isSubtle: true,
-                spacing: "Small",
-                wrap: true,
-              },
-              {
-                type: "TextBlock",
-                text: `Winnaar: ${match.winner.name}`,
-                wrap: true,
-              },
-            ],
-          },
-          {
-            type: "Column",
-            width: 1,
-            items: [
-              {
-                type: "TextBlock",
-                text: "Score",
-                weight: "Bolder",
-                horizontalAlignment: "Center",
-              },
-              {
-                type: "TextBlock",
-                text: `${match.playerOnePoints} - ${match.playerTwoPoints}`,
-                size: "ExtraLarge",
-                weight: "Bolder",
-                horizontalAlignment: "Center",
-              },
-            ],
-            verticalContentAlignment: "Center",
-          },
-        ],
-      },
-    ];
-
-    const topFive = leaderboard.slice(0, 5);
-    if (topFive.length) {
-      body.push({
-        type: "TextBlock",
-        text: "Actuele top 5",
-        weight: "Bolder",
-        spacing: "Medium",
-      });
-      body.push({
-        type: "FactSet",
-        facts: topFive.map((entry, index) => {
-          const winPercentage = entry.winRate
-            ? Math.round(entry.winRate * 100)
-            : 0;
-          return {
-            title: `${index + 1}. ${entry.player.name}`,
-            value: `${entry.wins}W/${entry.losses}L (${winPercentage}%)`,
-          };
-        }),
-      });
-    }
-
-    const badgeHolders = leaderboard
-      .filter((entry) => entry.badges.length > 0)
-      .slice(0, 3);
-    if (badgeHolders.length) {
-      body.push({
-        type: "TextBlock",
-        text: "Spelers in vorm",
-        weight: "Bolder",
-        spacing: "Medium",
-      });
-      body.push({
-        type: "TextBlock",
-        text: badgeHolders
-          .map((entry) => `${entry.player.name}: ${entry.badges.join(", ")}`)
-          .join("\n"),
-        wrap: true,
-      });
-    }
-
-    const streakMilestones = leaderboard.filter(
-      (entry) => entry.justReachedStreakFive
-    );
-    if (streakMilestones.length) {
-      body.push({
-        type: "TextBlock",
-        text: "Streak alert",
-        weight: "Bolder",
-        spacing: "Medium",
-      });
-      body.push({
-        type: "TextBlock",
-        text: streakMilestones
-          .map(
-            (entry) =>
-              `${entry.player.name} staat op een winstreak van ${entry.currentStreak}!`
-          )
-          .join("\n"),
-        wrap: true,
-      });
-    }
+    const { currentSeason, topFive } =
+      await getCurrentSeasonLeaderboardSnapshot();
+    const body = buildTeamsMatchCardBody({
+      title: "Nieuwe wedstrijd geregistreerd",
+      subtitle: "Scorekaart geupdate en klassement ververst.",
+      match,
+      currentSeasonName: currentSeason.name,
+      topFive,
+    });
 
     await sendTeamsCard(buildAdaptiveCard(body));
   } catch (error) {
@@ -654,82 +970,15 @@ const notifyTeamsPlayerChange = async (payload: {
 
 const notifyTeamsMatchUpdated = async (match: MatchWithRelations) => {
   try {
-    const leaderboard = await getLeaderboardSnapshot();
-    const body: unknown[] = [
-      {
-        type: "TextBlock",
-        text: "Wedstrijd bijgewerkt",
-        weight: "Bolder",
-        size: "Large",
-      },
-      {
-        type: "TextBlock",
-        text: `${match.playerOne.name} vs ${match.playerTwo.name}`,
-        weight: "Bolder",
-        size: "Medium",
-        wrap: true,
-      },
-      {
-        type: "TextBlock",
-        text: `Score: ${match.playerOnePoints}-${match.playerTwoPoints}`,
-        wrap: true,
-      },
-      {
-        type: "TextBlock",
-        text: `Winnaar: ${match.winner.name}`,
-        wrap: true,
-      },
-      {
-        type: "TextBlock",
-        text: `Seizoen: ${match.season?.name ?? "Onbekend"}`,
-        isSubtle: true,
-        wrap: true,
-      },
-    ];
-
-    const topThree = leaderboard.slice(0, 3);
-    if (topThree.length) {
-      body.push({
-        type: "TextBlock",
-        text: "Top 3 na wijziging",
-        weight: "Bolder",
-        spacing: "Medium",
-      });
-      body.push({
-        type: "FactSet",
-        facts: topThree.map((entry, index) => {
-          const winPercentage = entry.winRate
-            ? Math.round(entry.winRate * 100)
-            : 0;
-          return {
-            title: `${index + 1}. ${entry.player.name}`,
-            value: `${entry.wins}W/${entry.losses}L (${winPercentage}%)`,
-          };
-        }),
-      });
-    }
-
-    const streakMilestones = leaderboard.filter(
-      (entry) => entry.justReachedStreakFive
-    );
-    if (streakMilestones.length) {
-      body.push({
-        type: "TextBlock",
-        text: "Streak alert",
-        weight: "Bolder",
-        spacing: "Medium",
-      });
-      body.push({
-        type: "TextBlock",
-        text: streakMilestones
-          .map(
-            (entry) =>
-              `${entry.player.name} staat op een winstreak van ${entry.currentStreak}!`
-          )
-          .join("\n"),
-        wrap: true,
-      });
-    }
+    const { currentSeason, topFive } =
+      await getCurrentSeasonLeaderboardSnapshot();
+    const body = buildTeamsMatchCardBody({
+      title: "Wedstrijd bijgewerkt",
+      subtitle: "Resultaat aangepast en klassement opnieuw berekend.",
+      match,
+      currentSeasonName: currentSeason.name,
+      topFive,
+    });
 
     await sendTeamsCard(buildAdaptiveCard(body));
   } catch (error) {
@@ -739,54 +988,15 @@ const notifyTeamsMatchUpdated = async (match: MatchWithRelations) => {
 
 const notifyTeamsMatchDeleted = async (match: MatchWithRelations) => {
   try {
-    const leaderboard = await getLeaderboardSnapshot();
-    const body: unknown[] = [
-      {
-        type: "TextBlock",
-        text: "Wedstrijd verwijderd",
-        weight: "Bolder",
-        size: "Large",
-      },
-      {
-        type: "TextBlock",
-        text: `${match.playerOne.name} vs ${match.playerTwo.name}`,
-        weight: "Bolder",
-        size: "Medium",
-        wrap: true,
-      },
-      {
-        type: "TextBlock",
-        text: `Score was: ${match.playerOnePoints}-${match.playerTwoPoints}`,
-        wrap: true,
-      },
-      {
-        type: "TextBlock",
-        text: `Winnaar was: ${match.winner.name}`,
-        wrap: true,
-      },
-    ];
-
-    const topThree = leaderboard.slice(0, 3);
-    if (topThree.length) {
-      body.push({
-        type: "TextBlock",
-        text: "Top 3 na verwijdering",
-        weight: "Bolder",
-        spacing: "Medium",
-      });
-      body.push({
-        type: "FactSet",
-        facts: topThree.map((entry, index) => {
-          const winPercentage = entry.winRate
-            ? Math.round(entry.winRate * 100)
-            : 0;
-          return {
-            title: `${index + 1}. ${entry.player.name}`,
-            value: `${entry.wins}W/${entry.losses}L (${winPercentage}%)`,
-          };
-        }),
-      });
-    }
+    const { currentSeason, topFive } =
+      await getCurrentSeasonLeaderboardSnapshot();
+    const body = buildTeamsMatchCardBody({
+      title: "Wedstrijd verwijderd",
+      subtitle: "Resultaat teruggedraaid en huidig seizoen opnieuw gerankt.",
+      match,
+      currentSeasonName: currentSeason.name,
+      topFive,
+    });
 
     await sendTeamsCard(buildAdaptiveCard(body));
   } catch (error) {
@@ -794,35 +1004,79 @@ const notifyTeamsMatchDeleted = async (match: MatchWithRelations) => {
   }
 };
 
+const serializePlayer = (player: {
+  id: number;
+  name: string;
+  createdAt: Date;
+  updatedAt: Date;
+}) => ({
+  ...player,
+  createdAt: player.createdAt.toISOString(),
+  updatedAt: player.updatedAt.toISOString(),
+});
+
+const serializeSeason = (
+  season:
+    | {
+        id: number;
+        name: string;
+        startDate: Date;
+        endDate: Date;
+      }
+    | null
+    | undefined
+) =>
+  season
+    ? {
+        id: season.id,
+        name: season.name,
+        startDate: season.startDate.toISOString(),
+        endDate: season.endDate.toISOString(),
+      }
+    : null;
+
 const serializeMatch = (match: MatchWithRelations) => ({
   ...match,
   playedAt: match.playedAt.toISOString(),
-  playerOne: {
-    ...match.playerOne,
-    createdAt: match.playerOne.createdAt.toISOString(),
-    updatedAt: match.playerOne.updatedAt.toISOString(),
-  },
-  playerTwo: {
-    ...match.playerTwo,
-    createdAt: match.playerTwo.createdAt.toISOString(),
-    updatedAt: match.playerTwo.updatedAt.toISOString(),
-  },
-  winner: {
-    ...match.winner,
-    createdAt: match.winner.createdAt.toISOString(),
-    updatedAt: match.winner.updatedAt.toISOString(),
-  },
-  season: match.season
-    ? {
-        id: match.season.id,
-        name: match.season.name,
-        startDate: match.season.startDate.toISOString(),
-        endDate: match.season.endDate.toISOString(),
-      }
-    : null,
+  playerOne: serializePlayer(match.playerOne),
+  playerTwo: serializePlayer(match.playerTwo),
+  winner: serializePlayer(match.winner),
+  season: serializeSeason(match.season),
   createdAt: match.createdAt.toISOString(),
   updatedAt: match.updatedAt.toISOString(),
 });
+
+const serializeDoublesMatch = (match: DoublesMatchWithRelations) => ({
+  ...match,
+  playedAt: match.playedAt.toISOString(),
+  teamOnePlayerA: serializePlayer(match.teamOnePlayerA),
+  teamOnePlayerB: serializePlayer(match.teamOnePlayerB),
+  teamTwoPlayerA: serializePlayer(match.teamTwoPlayerA),
+  teamTwoPlayerB: serializePlayer(match.teamTwoPlayerB),
+  teamOnePlayers: [
+    serializePlayer(match.teamOnePlayerA),
+    serializePlayer(match.teamOnePlayerB),
+  ],
+  teamTwoPlayers: [
+    serializePlayer(match.teamTwoPlayerA),
+    serializePlayer(match.teamTwoPlayerB),
+  ],
+  season: serializeSeason(match.season),
+  createdAt: match.createdAt.toISOString(),
+  updatedAt: match.updatedAt.toISOString(),
+});
+
+const validateDoublesPlayerIds = (playerIds: number[]) => {
+  if (playerIds.some((playerId) => !Number.isInteger(playerId))) {
+    return "Ongeldige invoer.";
+  }
+
+  if (new Set(playerIds).size !== 4) {
+    return "In een 2v2-wedstrijd moet elke speler uniek zijn.";
+  }
+
+  return null;
+};
 
 // Helper to compute Elo deltas per match grouped by season
 const computeEloDeltas = (matches: MatchWithRelations[]) => {
@@ -1282,6 +1536,16 @@ app.delete("/api/players/:id", async (req, res, next) => {
           OR: [{ playerOneId: playerId }, { playerTwoId: playerId }],
         },
       }),
+      prisma.doublesMatch.deleteMany({
+        where: {
+          OR: [
+            { teamOnePlayerAId: playerId },
+            { teamOnePlayerBId: playerId },
+            { teamTwoPlayerAId: playerId },
+            { teamTwoPlayerBId: playerId },
+          ],
+        },
+      }),
       prisma.player.delete({ where: { id: playerId } }),
     ]);
 
@@ -1536,6 +1800,248 @@ app.delete("/api/matches/:id", async (req, res, next) => {
   }
 });
 
+app.get("/api/doubles-matches", async (_req, res, next) => {
+  try {
+    const matches = await prisma.doublesMatch.findMany({
+      orderBy: { playedAt: "desc" },
+      include: doublesMatchInclude,
+    });
+
+    const corrected = await Promise.all(
+      matches.map(async (match) => {
+        if (match.seasonId) {
+          return match;
+        }
+
+        const season = await getOrCreateSeasonForDate(match.playedAt);
+        return prisma.doublesMatch.update({
+          where: { id: match.id },
+          data: { seasonId: season.id },
+          include: doublesMatchInclude,
+        });
+      })
+    );
+
+    res.json(corrected.map(serializeDoublesMatch));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/doubles-matches", async (req, res, next) => {
+  const {
+    teamOnePlayerAId,
+    teamOnePlayerBId,
+    teamTwoPlayerAId,
+    teamTwoPlayerBId,
+    teamOnePoints,
+    teamTwoPoints,
+    playedAt,
+  } = req.body ?? {};
+
+  const playerIds = [
+    teamOnePlayerAId,
+    teamOnePlayerBId,
+    teamTwoPlayerAId,
+    teamTwoPlayerBId,
+  ];
+
+  if (
+    typeof teamOnePoints !== "number" ||
+    typeof teamTwoPoints !== "number"
+  ) {
+    return res.status(400).json({ message: "Ongeldige invoer." });
+  }
+
+  const validationError = validateDoublesPlayerIds(playerIds);
+  if (validationError) {
+    return res.status(400).json({ message: validationError });
+  }
+
+  if (teamOnePoints === teamTwoPoints) {
+    return res
+      .status(400)
+      .json({ message: "Een potje eindigt altijd met een winnaar." });
+  }
+
+  if (teamOnePoints < 0 || teamTwoPoints < 0) {
+    return res
+      .status(400)
+      .json({ message: "Scores kunnen niet negatief zijn." });
+  }
+
+  try {
+    const players = await prisma.player.findMany({
+      where: { id: { in: playerIds } },
+      select: { id: true },
+    });
+
+    if (players.length !== 4) {
+      return res.status(404).json({ message: "Een of meer spelers bestaan niet." });
+    }
+
+    const playedDate = playedAt ? new Date(playedAt) : new Date();
+    const season = await getOrCreateSeasonForDate(playedDate);
+    const winnerTeam = teamOnePoints > teamTwoPoints ? 1 : 2;
+
+    const match = await prisma.doublesMatch.create({
+      data: {
+        teamOnePlayerAId,
+        teamOnePlayerBId,
+        teamTwoPlayerAId,
+        teamTwoPlayerBId,
+        teamOnePoints,
+        teamTwoPoints,
+        winnerTeam,
+        playedAt: playedDate,
+        seasonId: season.id,
+      },
+      include: doublesMatchInclude,
+    });
+
+    res.status(201).json(serializeDoublesMatch(match));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/doubles-matches/:id", async (req, res, next) => {
+  const matchId = Number.parseInt(req.params.id, 10);
+  if (!Number.isInteger(matchId)) {
+    return res.status(400).json({ message: "Ongeldig wedstrijd ID." });
+  }
+
+  const {
+    teamOnePlayerAId,
+    teamOnePlayerBId,
+    teamTwoPlayerAId,
+    teamTwoPlayerBId,
+    teamOnePoints,
+    teamTwoPoints,
+    playedAt,
+  } = req.body ?? {};
+
+  try {
+    const existing = await prisma.doublesMatch.findUnique({
+      where: { id: matchId },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ message: "Wedstrijd niet gevonden." });
+    }
+
+    const nextTeamOnePlayerAId =
+      typeof teamOnePlayerAId === "number"
+        ? teamOnePlayerAId
+        : existing.teamOnePlayerAId;
+    const nextTeamOnePlayerBId =
+      typeof teamOnePlayerBId === "number"
+        ? teamOnePlayerBId
+        : existing.teamOnePlayerBId;
+    const nextTeamTwoPlayerAId =
+      typeof teamTwoPlayerAId === "number"
+        ? teamTwoPlayerAId
+        : existing.teamTwoPlayerAId;
+    const nextTeamTwoPlayerBId =
+      typeof teamTwoPlayerBId === "number"
+        ? teamTwoPlayerBId
+        : existing.teamTwoPlayerBId;
+    const nextTeamOnePoints =
+      typeof teamOnePoints === "number"
+        ? teamOnePoints
+        : existing.teamOnePoints;
+    const nextTeamTwoPoints =
+      typeof teamTwoPoints === "number"
+        ? teamTwoPoints
+        : existing.teamTwoPoints;
+
+    const playerIds = [
+      nextTeamOnePlayerAId,
+      nextTeamOnePlayerBId,
+      nextTeamTwoPlayerAId,
+      nextTeamTwoPlayerBId,
+    ];
+
+    const validationError = validateDoublesPlayerIds(playerIds);
+    if (validationError) {
+      return res.status(400).json({ message: validationError });
+    }
+
+    if (nextTeamOnePoints === nextTeamTwoPoints) {
+      return res
+        .status(400)
+        .json({ message: "Een potje eindigt altijd met een winnaar." });
+    }
+
+    if (nextTeamOnePoints < 0 || nextTeamTwoPoints < 0) {
+      return res
+        .status(400)
+        .json({ message: "Scores kunnen niet negatief zijn." });
+    }
+
+    const players = await prisma.player.findMany({
+      where: { id: { in: playerIds } },
+      select: { id: true },
+    });
+
+    if (players.length !== 4) {
+      return res.status(404).json({ message: "Een of meer spelers bestaan niet." });
+    }
+
+    const nextPlayedAt = playedAt ? new Date(playedAt) : existing.playedAt;
+    const season = await getOrCreateSeasonForDate(nextPlayedAt);
+    const winnerTeam = nextTeamOnePoints > nextTeamTwoPoints ? 1 : 2;
+
+    const updated = await prisma.doublesMatch.update({
+      where: { id: matchId },
+      data: {
+        teamOnePlayerAId: nextTeamOnePlayerAId,
+        teamOnePlayerBId: nextTeamOnePlayerBId,
+        teamTwoPlayerAId: nextTeamTwoPlayerAId,
+        teamTwoPlayerBId: nextTeamTwoPlayerBId,
+        teamOnePoints: nextTeamOnePoints,
+        teamTwoPoints: nextTeamTwoPoints,
+        winnerTeam,
+        playedAt: nextPlayedAt,
+        seasonId: season.id,
+      },
+      include: doublesMatchInclude,
+    });
+
+    res.json(serializeDoublesMatch(updated));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/doubles-matches/:id", async (req, res, next) => {
+  const matchId = Number.parseInt(req.params.id, 10);
+  if (!Number.isInteger(matchId)) {
+    return res.status(400).json({ message: "Ongeldig wedstrijd ID." });
+  }
+
+  try {
+    const existing = await prisma.doublesMatch.findUnique({
+      where: { id: matchId },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ message: "Wedstrijd niet gevonden." });
+    }
+
+    await prisma.doublesMatch.delete({
+      where: { id: matchId },
+    });
+
+    res.status(204).end();
+  } catch (error) {
+    if (isPrismaErrorWithCode(error) && error.code === "P2025") {
+      return res.status(404).json({ message: "Wedstrijd niet gevonden." });
+    }
+    next(error);
+  }
+});
+
 app.get("/api/seasons", async (_req, res, next) => {
   try {
     await ensurePastSeasonChampions();
@@ -1622,6 +2128,22 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ message: "Er ging iets mis." });
 });
 
-app.listen(PORT, () => {
-  console.log(`Pingpong API draait op http://localhost:${PORT}`);
-});
+const start = async () => {
+  try {
+    const removedDuplicates = await deduplicateSeasons();
+    if (removedDuplicates > 0) {
+      console.log(
+        `Seizoenen opgeschoond: ${removedDuplicates} dubbele records verwijderd.`
+      );
+    }
+
+    app.listen(PORT, () => {
+      console.log(`Pingpong API draait op http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error("Kon seizoensintegriteit niet waarborgen bij opstarten.", error);
+    process.exit(1);
+  }
+};
+
+start();

@@ -1,4 +1,5 @@
 import type {
+  DoublesMatch,
   Match,
   MatchRecommendation,
   PlayerStats,
@@ -105,6 +106,40 @@ export function updateMatch(id: number, payload: MatchPayload) {
 
 export function deleteMatch(id: number) {
   return request<void>(`/api/matches/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export type DoublesMatchPayload = {
+  teamOnePlayerAId: number;
+  teamOnePlayerBId: number;
+  teamTwoPlayerAId: number;
+  teamTwoPlayerBId: number;
+  teamOnePoints: number;
+  teamTwoPoints: number;
+  playedAt?: string;
+};
+
+export function getDoublesMatches(): Promise<DoublesMatch[]> {
+  return request<DoublesMatch[]>("/api/doubles-matches");
+}
+
+export function createDoublesMatch(payload: DoublesMatchPayload) {
+  return request<DoublesMatch>("/api/doubles-matches", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateDoublesMatch(id: number, payload: DoublesMatchPayload) {
+  return request<DoublesMatch>(`/api/doubles-matches/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteDoublesMatch(id: number) {
+  return request<void>(`/api/doubles-matches/${id}`, {
     method: "DELETE",
   });
 }

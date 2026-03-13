@@ -1,3 +1,5 @@
+import type { PlayerBadge } from "../shared/badges";
+
 export type Player = {
   id: number;
   name: string;
@@ -14,7 +16,7 @@ export type PlayerStats = {
   pointsAgainst: number;
   winRate: number;
   pointDifferential: number;
-  badges: string[];
+  badges: PlayerBadge[];
   currentStreak: number;
   longestStreak: number;
   championships: number;
@@ -40,6 +42,27 @@ export type Match = {
   // Elo change for this match (positive/negative). Provided by the server when available.
   playerOneEloDelta?: number;
   playerTwoEloDelta?: number;
+};
+
+export type DoublesMatch = {
+  id: number;
+  playedAt: string;
+  teamOnePlayerAId: number;
+  teamOnePlayerBId: number;
+  teamTwoPlayerAId: number;
+  teamTwoPlayerBId: number;
+  teamOnePoints: number;
+  teamTwoPoints: number;
+  winnerTeam: 1 | 2;
+  teamOnePlayerA: Player;
+  teamOnePlayerB: Player;
+  teamTwoPlayerA: Player;
+  teamTwoPlayerB: Player;
+  teamOnePlayers: [Player, Player];
+  teamTwoPlayers: [Player, Player];
+  season: SeasonRef | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type SeasonRef = {
