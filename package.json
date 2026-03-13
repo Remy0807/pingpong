@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build && npm run server:build",
     "server:build": "tsc -p tsconfig.server.json",
-    "server:start": "node dist/server/index.js",
+    "server:start": "node dist/server/server/index.js",
     "preview": "vite preview",
     "server:dev": "tsx watch server/index.ts",
     "db:push": "prisma db push",
