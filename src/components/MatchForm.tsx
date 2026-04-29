@@ -9,9 +9,14 @@ export type MatchFormValues = {
   playedAt?: string;
 };
 
-type MatchFormProps = {
+type ScoreRow = {
+  id: number;
+  playerOnePoints: number;
+  playerTwoPoints: number;
+};
+
+type BaseMatchFormProps = {
   players: PlayerStats[];
-  onSubmit: (match: MatchFormValues) => Promise<void> | void;
   loading?: boolean;
   submitLabel?: string;
   title?: string;
@@ -23,7 +28,24 @@ type MatchFormProps = {
   className?: string;
 };
 
+type SingleMatchFormProps = BaseMatchFormProps & {
+  allowMultiple?: false;
+  onSubmit: (match: MatchFormValues) => Promise<void> | void;
+};
+
+type MultiMatchFormProps = BaseMatchFormProps & {
+  allowMultiple: true;
+  onSubmit: (matches: MatchFormValues[]) => Promise<void> | void;
+};
+
+type MatchFormProps = SingleMatchFormProps | MultiMatchFormProps;
+
 const defaultPoints = { playerOnePoints: 11, playerTwoPoints: 7 };
+
+const createScoreRow = (id: number): ScoreRow => ({
+  id,
+  ...defaultPoints,
+});
 
 const toDateTimeLocal = (value: Date | string | undefined) => {
   if (!value) {
@@ -54,6 +76,7 @@ export function MatchForm({
   initialValues,
   onCancel,
   className,
+  allowMultiple = false,
 }: MatchFormProps) {
   const [playerOneId, setPlayerOneId] = useState<number | null>(
     initialValues?.playerOneId ?? null
@@ -70,6 +93,9 @@ export function MatchForm({
   const [playedAt, setPlayedAt] = useState<string>(
     toDateTimeLocal(initialValues?.playedAt ?? new Date())
   );
+  const [scoreRows, setScoreRows] = useState<ScoreRow[]>([
+    createScoreRow(1),
+  ]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -80,6 +106,13 @@ export function MatchForm({
     setPlayerTwoId(initialValues.playerTwoId);
     setPlayerOnePoints(initialValues.playerOnePoints);
     setPlayerTwoPoints(initialValues.playerTwoPoints);
+    setScoreRows([
+      {
+        id: 1,
+        playerOnePoints: initialValues.playerOnePoints,
+        playerTwoPoints: initialValues.playerTwoPoints,
+      },
+    ]);
     setPlayedAt(toDateTimeLocal(initialValues.playedAt));
   }, [initialValues]);
 
@@ -112,31 +145,52 @@ export function MatchForm({
       return;
     }
 
-    if (playerOnePoints === playerTwoPoints) {
+    const matches = allowMultiple
+      ? scoreRows.map((row) => ({
+          playerOneId,
+          playerTwoId,
+          playerOnePoints: row.playerOnePoints,
+          playerTwoPoints: row.playerTwoPoints,
+          playedAt: playedAt ? new Date(playedAt).toISOString() : undefined,
+        }))
+      : [
+          {
+            playerOneId,
+            playerTwoId,
+            playerOnePoints,
+            playerTwoPoints,
+            playedAt: playedAt ? new Date(playedAt).toISOString() : undefined,
+          },
+        ];
+
+    if (matches.some((match) => match.playerOnePoints === match.playerTwoPoints)) {
       setError("Een potje kan niet in een gelijkspel eindigen.");
       return;
     }
 
-    if (playerOnePoints < 0 || playerTwoPoints < 0) {
+    if (
+      matches.some(
+        (match) => match.playerOnePoints < 0 || match.playerTwoPoints < 0
+      )
+    ) {
       setError("Scores kunnen niet negatief zijn.");
       return;
     }
 
     try {
       setError(null);
-      await onSubmit({
-        playerOneId,
-        playerTwoId,
-        playerOnePoints,
-        playerTwoPoints,
-        playedAt: playedAt ? new Date(playedAt).toISOString() : undefined,
-      });
+      if (allowMultiple) {
+        await onSubmit(matches);
+      } else {
+        await onSubmit(matches[0]);
+      }
 
       if (!initialValues) {
         setPlayerOneId(null);
         setPlayerTwoId(null);
         setPlayerOnePoints(defaultPoints.playerOnePoints);
         setPlayerTwoPoints(defaultPoints.playerTwoPoints);
+        setScoreRows([createScoreRow(1)]);
         setPlayedAt(toDateTimeLocal(new Date()));
       }
     } catch (err) {
@@ -149,7 +203,44 @@ export function MatchForm({
     setPlayerTwoId(playerOneId);
     setPlayerOnePoints(playerTwoPoints);
     setPlayerTwoPoints(playerOnePoints);
+    setScoreRows((rows) =>
+      rows.map((row) => ({
+        ...row,
+        playerOnePoints: row.playerTwoPoints,
+        playerTwoPoints: row.playerOnePoints,
+      }))
+    );
   };
+
+  const updateScoreRow = (
+    id: number,
+    field: "playerOnePoints" | "playerTwoPoints",
+    value: number
+  ) => {
+    setScoreRows((rows) =>
+      rows.map((row) => (row.id === id ? { ...row, [field]: value } : row))
+    );
+  };
+
+  const addScoreRow = () => {
+    setScoreRows((rows) => [
+      ...rows,
+      createScoreRow(Math.max(...rows.map((row) => row.id)) + 1),
+    ]);
+  };
+
+  const removeScoreRow = (id: number) => {
+    setScoreRows((rows) =>
+      rows.length === 1 ? rows : rows.filter((row) => row.id !== id)
+    );
+  };
+
+  const submitText =
+    loading && allowMultiple
+      ? "Opslaan..."
+      : allowMultiple
+        ? `${scoreRows.length} ${scoreRows.length === 1 ? "potje" : "potjes"} opslaan`
+        : submitLabel;
 
   return (
     <form
@@ -229,39 +320,112 @@ export function MatchForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <label className="block text-sm font-medium text-slate-300">
-            Score speler A
-          </label>
-          <input
-            type="number"
-            value={playerOnePoints || ""}
-            min={0}
-            onChange={(event) => {
-              const value = event.target.value;
-              setPlayerOnePoints(value === "" ? 0 : Number(value));
-            }}
-            className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
-          />
+      {allowMultiple ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <label className="block text-sm font-medium text-slate-300">
+              Potjes tegen dezelfde tegenstander
+            </label>
+            <button
+              type="button"
+              onClick={addScoreRow}
+              className="inline-flex items-center justify-center rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-axoft-400 hover:text-axoft-200 focus:outline-none focus:ring-2 focus:ring-axoft-500/40"
+            >
+              + Potje
+            </button>
+          </div>
+          <div className="space-y-2">
+            {scoreRows.map((row, index) => (
+              <div
+                key={row.id}
+                className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3 rounded-lg border border-white/10 bg-slate-950/30 p-3"
+              >
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-slate-400">
+                    Potje {index + 1} - speler A
+                  </label>
+                  <input
+                    type="number"
+                    value={row.playerOnePoints || ""}
+                    min={0}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      updateScoreRow(
+                        row.id,
+                        "playerOnePoints",
+                        value === "" ? 0 : Number(value)
+                      );
+                    }}
+                    className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-3 py-2 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-slate-400">
+                    Potje {index + 1} - speler B
+                  </label>
+                  <input
+                    type="number"
+                    value={row.playerTwoPoints || ""}
+                    min={0}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      updateScoreRow(
+                        row.id,
+                        "playerTwoPoints",
+                        value === "" ? 0 : Number(value)
+                      );
+                    }}
+                    className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-3 py-2 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeScoreRow(row.id)}
+                  disabled={scoreRows.length === 1}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 text-sm font-semibold text-slate-300 transition hover:border-rose-400 hover:text-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label={`Potje ${index + 1} verwijderen`}
+                >
+                  X
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-300">
+              Score speler A
+            </label>
+            <input
+              type="number"
+              value={playerOnePoints || ""}
+              min={0}
+              onChange={(event) => {
+                const value = event.target.value;
+                setPlayerOnePoints(value === "" ? 0 : Number(value));
+              }}
+              className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
+            />
+          </div>
 
-        <div className="space-y-2">
-          <label className="block text-sm font-medium text-slate-300">
-            Score speler B
-          </label>
-          <input
-            type="number"
-            value={playerTwoPoints || ""}
-            min={0}
-            onChange={(event) => {
-              const value = event.target.value;
-              setPlayerTwoPoints(value === "" ? 0 : Number(value));
-            }}
-            className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
-          />
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-slate-300">
+              Score speler B
+            </label>
+            <input
+              type="number"
+              value={playerTwoPoints || ""}
+              min={0}
+              onChange={(event) => {
+                const value = event.target.value;
+                setPlayerTwoPoints(value === "" ? 0 : Number(value));
+              }}
+              className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <button
@@ -286,7 +450,7 @@ export function MatchForm({
             disabled={loading || players.length < 2}
             className="inline-flex items-center justify-center rounded-lg bg-axoft-500 px-6 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-axoft-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-950 focus:ring-axoft-500 disabled:cursor-not-allowed disabled:bg-axoft-500/60"
           >
-            {loading ? "Opslaan..." : submitLabel}
+            {loading ? "Opslaan..." : submitText}
           </button>
         </div>
       </div>

@@ -97,6 +97,16 @@ export function createMatch(payload: MatchPayload) {
   });
 }
 
+export async function createMatches(payloads: MatchPayload[]) {
+  const matches: Match[] = [];
+
+  for (const payload of payloads) {
+    matches.push(await createMatch(payload));
+  }
+
+  return matches;
+}
+
 export function updateMatch(id: number, payload: MatchPayload) {
   return request<Match>(`/api/matches/${id}`, {
     method: "PATCH",

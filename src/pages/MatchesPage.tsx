@@ -33,7 +33,7 @@ export function MatchesPage() {
     updatingMatch,
     deletingMatchId,
     createPlayer,
-    createMatch,
+    createMatches,
     updateMatch,
     deleteMatch,
   } = useAppData();
@@ -154,10 +154,10 @@ export function MatchesPage() {
     setCreatePlayerOpen(false);
   };
 
-  const handleCreateMatch = async (
-    payload: Parameters<typeof createMatch>[0]
+  const handleCreateMatches = async (
+    payloads: Parameters<typeof createMatches>[0]
   ) => {
-    await createMatch(payload);
+    await createMatches(payloads);
     setCreateMatchOpen(false);
   };
 
@@ -360,7 +360,8 @@ export function MatchesPage() {
       >
         <MatchForm
           players={players}
-          onSubmit={handleCreateMatch}
+          onSubmit={handleCreateMatches}
+          allowMultiple
           loading={savingMatch}
           showHeader={false}
           className="flex flex-col gap-5"

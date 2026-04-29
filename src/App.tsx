@@ -12,6 +12,7 @@ import {
   updatePlayer,
   deletePlayer,
   createMatch,
+  createMatches,
   deleteDoublesMatch,
   updateMatch,
   deleteMatch,
@@ -176,6 +177,29 @@ export default function App() {
     [loadMatches, loadPlayers, loadSeasons]
   );
 
+  const handleMatchesCreate = useCallback(
+    async (payloads: MatchPayload[]) => {
+      if (!payloads.length) {
+        return;
+      }
+
+      setSavingMatch(true);
+      setError(null);
+      try {
+        await createMatches(payloads);
+        await Promise.all([loadPlayers(), loadMatches(), loadSeasons()]);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Kon wedstrijden niet opslaan."
+        );
+        throw err;
+      } finally {
+        setSavingMatch(false);
+      }
+    },
+    [loadMatches, loadPlayers, loadSeasons]
+  );
+
   const handleDoublesMatchCreate = useCallback(
     async (payload: DoublesMatchPayload) => {
       setSavingDoublesMatch(true);
@@ -297,6 +321,7 @@ export default function App() {
       updatePlayer: handlePlayerUpdate,
       deletePlayer: handlePlayerDelete,
       createMatch: handleMatchCreate,
+      createMatches: handleMatchesCreate,
       updateMatch: handleMatchUpdate,
       deleteMatch: handleMatchDelete,
       createDoublesMatch: handleDoublesMatchCreate,
@@ -326,6 +351,7 @@ export default function App() {
       handlePlayerUpdate,
       handlePlayerDelete,
       handleMatchCreate,
+      handleMatchesCreate,
       handleMatchUpdate,
       handleMatchDelete,
       handleDoublesMatchCreate,

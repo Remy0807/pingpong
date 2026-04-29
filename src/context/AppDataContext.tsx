@@ -23,6 +23,7 @@ export type AppDataContextValue = {
   updatePlayer: (id: number, name: string) => Promise<void>;
   deletePlayer: (id: number) => Promise<void>;
   createMatch: (payload: MatchPayload) => Promise<void>;
+  createMatches: (payloads: MatchPayload[]) => Promise<void>;
   updateMatch: (id: number, payload: MatchPayload) => Promise<void>;
   deleteMatch: (id: number) => Promise<void>;
   createDoublesMatch: (payload: DoublesMatchPayload) => Promise<void>;
