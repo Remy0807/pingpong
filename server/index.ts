@@ -374,6 +374,7 @@ const buildPlayerStats = (
   return {
     player: {
       id: player.id,
+      uid: player.uid ?? null,
       name: player.name,
       createdAt: player.createdAt.toISOString(),
       updatedAt: player.updatedAt.toISOString(),
@@ -972,6 +973,7 @@ const notifyTeamsMatchDeleted = async (match: MatchWithRelations) => {
 const serializePlayer = (player: {
   id: number;
   name: string;
+  uid?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }) => ({
@@ -1057,13 +1059,25 @@ const serializePortalGroup = (group: {
 });
 
 const serializePortalMembership = (membership: {
+  uid: string;
   groupId: string;
   role: "owner" | "member";
   joinedAt: Date;
 }) => ({
+  uid: membership.uid,
   groupId: membership.groupId,
   role: membership.role,
   joinedAt: membership.joinedAt.toISOString(),
+});
+
+const serializePortalUserRecord = (user: {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+}) => ({
+  uid: user.uid,
+  email: user.email,
+  displayName: user.displayName,
 });
 
 const validateDoublesPlayerIds = (playerIds: number[]) => {
@@ -1498,6 +1512,411 @@ app.post("/api/portal/groups/:groupId/join", async (req, res, next) => {
         memberCount: members.filter((membership) => membership.groupId === groupId).length,
       },
       membership: serializePortalMembership(result.membership),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/portal/groups/:groupId", async (req, res, next) => {
+  try {
+    const user = getFirebaseUserInfo(req as AuthedRequest);
+    if (!user) {
+      return res.status(401).json({ message: "Inloggen vereist." });
+    }
+
+    const { groupId } = req.params;
+    const membership = await store.getMembership(user.uid, groupId);
+    if (!membership) {
+      return res.status(403).json({ message: "Je hebt geen toegang tot deze groep." });
+    }
+
+    const group = await store.getGroup(groupId);
+    if (!group) {
+      return res.status(404).json({ message: "Groep niet gevonden." });
+    }
+
+    const memberships = await store.listMembershipsForGroup(groupId);
+    const members = await Promise.all(
+      memberships.map(async (groupMembership) => {
+        const memberUser = await store.getPortalUser(groupMembership.uid);
+        return {
+          uid: groupMembership.uid,
+          email: memberUser?.email ?? null,
+          displayName:
+            memberUser?.displayName ??
+            (groupMembership.uid === group.ownerUid ? "Groepseigenaar" : null),
+          role: groupMembership.role,
+          joinedAt: groupMembership.joinedAt.toISOString(),
+        };
+      })
+    );
+
+    res.json({
+      group: {
+        ...serializePortalGroup(group),
+        memberCount: memberships.length,
+      },
+      viewerRole: membership.role,
+      joinCode: membership.role === "owner" ? group.joinCode : null,
+      members: members.sort((left, right) => {
+        if (left.role === right.role) {
+          return (left.displayName ?? left.uid).localeCompare(
+            right.displayName ?? right.uid,
+            "nl-NL"
+          );
+        }
+        return left.role === "owner" ? -1 : 1;
+      }),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/api/portal/groups/:groupId", async (req, res, next) => {
+  try {
+    const user = getFirebaseUserInfo(req as AuthedRequest);
+    if (!user) {
+      return res.status(401).json({ message: "Inloggen vereist." });
+    }
+
+    const { groupId } = req.params;
+    const membership = await store.getMembership(user.uid, groupId);
+    if (!membership) {
+      return res.status(403).json({ message: "Je hebt geen toegang tot deze groep." });
+    }
+    if (membership.role !== "owner") {
+      return res.status(403).json({ message: "Alleen de eigenaar kan dit aanpassen." });
+    }
+
+    const { name, joinCode } = req.body ?? {};
+    if (name != null && (typeof name !== "string" || !name.trim())) {
+      return res.status(400).json({ message: "Groepsnaam is verplicht." });
+    }
+    if (joinCode != null && (typeof joinCode !== "string" || !joinCode.trim())) {
+      return res.status(400).json({ message: "Geheime code is verplicht." });
+    }
+
+    const updated = await store.updateGroup(groupId, {
+      name,
+      joinCode,
+    });
+
+    const members = await store.listMembershipsForGroup(groupId);
+    res.json({
+      group: {
+        ...serializePortalGroup(updated),
+        memberCount: members.length,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/portal/groups/:groupId/members/:uid", async (req, res, next) => {
+  try {
+    const user = getFirebaseUserInfo(req as AuthedRequest);
+    if (!user) {
+      return res.status(401).json({ message: "Inloggen vereist." });
+    }
+
+    const { groupId, uid } = req.params;
+    const membership = await store.getMembership(user.uid, groupId);
+    if (!membership) {
+      return res.status(403).json({ message: "Je hebt geen toegang tot deze groep." });
+    }
+    if (membership.role !== "owner") {
+      return res.status(403).json({ message: "Alleen de eigenaar kan leden verwijderen." });
+    }
+    if (uid === user.uid) {
+      return res.status(400).json({ message: "Je kunt jezelf niet verwijderen." });
+    }
+
+    await store.removeMembership(groupId, uid);
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete("/api/portal/groups/:groupId/membership", async (req, res, next) => {
+  try {
+    const user = getFirebaseUserInfo(req as AuthedRequest);
+    if (!user) {
+      return res.status(401).json({ message: "Inloggen vereist." });
+    }
+
+    const { groupId } = req.params;
+    const membership = await store.getMembership(user.uid, groupId);
+    if (!membership) {
+      return res.status(403).json({ message: "Je hebt geen toegang tot deze groep." });
+    }
+    if (membership.role === "owner") {
+      return res.status(400).json({ message: "De eigenaar kan de groep niet verlaten." });
+    }
+
+    await store.removeMembership(groupId, user.uid);
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+const monthKeyForDate = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+const monthLabelForDate = (date: Date) =>
+  date.toLocaleDateString("nl-NL", {
+    month: "long",
+    year: "numeric",
+  });
+
+const buildMonthWindow = (count: number, now = new Date()) => {
+  const months: { key: string; label: string; matches: number; wins: number; losses: number; pointsFor: number; pointsAgainst: number }[] = [];
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    months.push({
+      key: monthKeyForDate(date),
+      label: monthLabelForDate(date),
+      matches: 0,
+      wins: 0,
+      losses: 0,
+      pointsFor: 0,
+      pointsAgainst: 0,
+    });
+  }
+  return months;
+};
+
+app.get("/api/account/overview", async (req, res, next) => {
+  try {
+    const user = getFirebaseUserInfo(req as AuthedRequest);
+    if (!user) {
+      return res.status(401).json({ message: "Inloggen vereist." });
+    }
+
+    const [groups, memberships, allMemberships] = await Promise.all([
+      store.listGroups(),
+      store.listMembershipsForUser(user.uid),
+      store.listMemberships(),
+    ]);
+    const groupMap = new Map(groups.map((group) => [group.id, group]));
+    const now = new Date();
+    const monthlyHistory = buildMonthWindow(12, now);
+    const monthMap = new Map(monthlyHistory.map((entry) => [entry.key, entry]));
+    const recentMatches: Array<{
+      id: string;
+      groupId: string;
+      groupName: string;
+      playedAt: string;
+      kind: "singles" | "doubles";
+      title: string;
+      detail: string;
+      won: boolean;
+      scored: number;
+      conceded: number;
+    }> = [];
+    const groupSummaries = new Map<
+      string,
+      {
+        group: {
+          id: string;
+          name: string;
+          ownerUid: string;
+          createdAt: string;
+          updatedAt: string;
+          memberCount: number;
+        };
+        role: "owner" | "member";
+        matches: number;
+        wins: number;
+        losses: number;
+        lastPlayedAt: string | null;
+      }
+    >();
+
+    for (const membership of memberships) {
+      const group = groupMap.get(membership.groupId);
+      if (!group) {
+        continue;
+      }
+
+      const player = await store.getPlayerByUid(group.id, user.uid);
+      if (!player) {
+        continue;
+      }
+
+      const groupMemberships = allMemberships.filter(
+        (entry) => entry.groupId === group.id
+      );
+      const groupSummary = {
+        group: {
+          ...serializePortalGroup(group),
+          memberCount: groupMemberships.length,
+        },
+        role: membership.role,
+        matches: 0,
+        wins: 0,
+        losses: 0,
+        lastPlayedAt: null as string | null,
+      };
+
+      const matches = await Promise.all(
+        (await store.listMatches(group.id))
+          .filter(
+            (match) =>
+              match.playerOneId === player.id || match.playerTwoId === player.id
+          )
+          .map((match) => store.hydrateMatch(group.id, match))
+      );
+
+      for (const match of matches) {
+        const isPlayerOne = match.playerOneId === player.id;
+        const won = match.winnerId === player.id;
+        const scored = isPlayerOne
+          ? match.playerOnePoints
+          : match.playerTwoPoints;
+        const conceded = isPlayerOne
+          ? match.playerTwoPoints
+          : match.playerOnePoints;
+        const key = monthKeyForDate(match.playedAt);
+        const bucket = monthMap.get(key);
+        if (bucket) {
+          bucket.matches += 1;
+          bucket.wins += won ? 1 : 0;
+          bucket.losses += won ? 0 : 1;
+          bucket.pointsFor += scored;
+          bucket.pointsAgainst += conceded;
+        }
+        groupSummary.matches += 1;
+        groupSummary.wins += won ? 1 : 0;
+        groupSummary.losses += won ? 0 : 1;
+        groupSummary.lastPlayedAt = (
+          groupSummary.lastPlayedAt == null ||
+          match.playedAt.toISOString() > groupSummary.lastPlayedAt
+            ? match.playedAt.toISOString()
+            : groupSummary.lastPlayedAt
+        );
+        recentMatches.push({
+          id: `s-${group.id}-${match.id}`,
+          groupId: group.id,
+          groupName: group.name,
+          playedAt: match.playedAt.toISOString(),
+          kind: "singles",
+          title: `${won ? "Gewonnen" : "Verloren"} tegen ${
+            isPlayerOne ? match.playerTwo.name : match.playerOne.name
+          }`,
+          detail: `${scored}-${conceded} · ${match.season?.name ?? "Geen seizoen"}`,
+          won,
+          scored,
+          conceded,
+        });
+      }
+
+      const doublesMatches = await Promise.all(
+        (await store.listDoublesMatches(group.id))
+          .filter((match) =>
+            [
+              match.teamOnePlayerAId,
+              match.teamOnePlayerBId,
+              match.teamTwoPlayerAId,
+              match.teamTwoPlayerBId,
+            ].includes(player.id)
+          )
+          .map((match) => store.hydrateDoublesMatch(group.id, match))
+      );
+
+      for (const match of doublesMatches) {
+        const inTeamOne =
+          match.teamOnePlayerAId === player.id ||
+          match.teamOnePlayerBId === player.id;
+        const won = match.winnerTeam === (inTeamOne ? 1 : 2);
+        const scored = inTeamOne ? match.teamOnePoints : match.teamTwoPoints;
+        const conceded = inTeamOne ? match.teamTwoPoints : match.teamOnePoints;
+        const key = monthKeyForDate(match.playedAt);
+        const bucket = monthMap.get(key);
+        if (bucket) {
+          bucket.matches += 1;
+          bucket.wins += won ? 1 : 0;
+          bucket.losses += won ? 0 : 1;
+          bucket.pointsFor += scored;
+          bucket.pointsAgainst += conceded;
+        }
+        groupSummary.matches += 1;
+        groupSummary.wins += won ? 1 : 0;
+        groupSummary.losses += won ? 0 : 1;
+        groupSummary.lastPlayedAt = (
+          groupSummary.lastPlayedAt == null ||
+          match.playedAt.toISOString() > groupSummary.lastPlayedAt
+            ? match.playedAt.toISOString()
+            : groupSummary.lastPlayedAt
+        );
+        recentMatches.push({
+          id: `d-${group.id}-${match.id}`,
+          groupId: group.id,
+          groupName: group.name,
+          playedAt: match.playedAt.toISOString(),
+          kind: "doubles",
+          title: `${won ? "Gewonnen" : "Verloren"} in 2v2`,
+          detail: `${scored}-${conceded} · ${match.season?.name ?? "Geen seizoen"}`,
+          won,
+          scored,
+          conceded,
+        });
+      }
+
+      groupSummaries.set(group.id, groupSummary);
+    }
+
+    const totals = monthlyHistory.reduce(
+      (acc, month) => {
+        acc.matches += month.matches;
+        acc.wins += month.wins;
+        acc.losses += month.losses;
+        acc.pointsFor += month.pointsFor;
+        acc.pointsAgainst += month.pointsAgainst;
+        return acc;
+      },
+      {
+        matches: 0,
+        wins: 0,
+        losses: 0,
+        pointsFor: 0,
+        pointsAgainst: 0,
+      }
+    );
+
+    const recentSorted = recentMatches
+      .sort((a, b) => (a.playedAt < b.playedAt ? 1 : -1))
+      .slice(0, 12);
+
+    res.json({
+      user: serializePortalUserRecord(user),
+      memberships: memberships.map(serializePortalMembership),
+      groups: groups.map((group) => ({
+        ...serializePortalGroup(group),
+        memberCount: allMemberships.filter((membership) => membership.groupId === group.id).length,
+      })),
+      totals: {
+        matches: totals.matches,
+        wins: totals.wins,
+        losses: totals.losses,
+        winRate: totals.matches ? totals.wins / totals.matches : 0,
+        pointsFor: totals.pointsFor,
+        pointsAgainst: totals.pointsAgainst,
+        groupsPlayed: groupSummaries.size,
+      },
+      currentMonth: monthlyHistory[monthlyHistory.length - 1] ?? null,
+      monthlyHistory,
+      recentMatches: recentSorted,
+      groupSummaries: Array.from(groupSummaries.values()).sort((left, right) => {
+        if (right.matches === left.matches) {
+          return (right.lastPlayedAt ?? "").localeCompare(left.lastPlayedAt ?? "");
+        }
+        return right.matches - left.matches;
+      }),
     });
   } catch (error) {
     next(error);

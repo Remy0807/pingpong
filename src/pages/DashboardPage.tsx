@@ -3,9 +3,11 @@ import { BadgeLegend } from "../components/BadgeLegend";
 import { DoublesLeaderboardTable } from "../components/DoublesLeaderboardTable";
 import { Leaderboard, type LeaderboardEntry } from "../components/Leaderboard";
 import { MatchesTable } from "../components/MatchesTable";
+import { Sparkline } from "../components/Sparkline";
 import { SeasonOverview } from "../components/SeasonOverview";
 import { SeasonHighlightCard } from "../components/SeasonHighlightCard";
 import { useAppData } from "../context/AppDataContext";
+import { usePortal } from "../context/PortalContext";
 import {
   buildDoublesPlayerLeaderboard,
   buildDoublesSummary,
@@ -75,8 +77,10 @@ type AchievementEvent = {
 };
 
 export function DashboardPage() {
-  const { players, matches, doublesMatches, seasons, currentSeasonId } =
+  const { players, matches, doublesMatches, seasons, currentSeasonId, accountOverview } =
     useAppData();
+  const { user, activeGroup } = usePortal();
+  const [overviewRange, setOverviewRange] = useState<1 | 3 | 6 | 12>(1);
 
   const [selectedScope, setSelectedScope] = useState<"overall" | number>(
     "overall",
@@ -387,9 +391,414 @@ export function DashboardPage() {
   const animatedBestWinRate = useCountUp(bestWinRatePercent);
   const animatedMostMatches = useCountUp(mostMatchesCount);
   const animatedBestDifferential = useCountUp(bestDifferentialValue);
+  const currentPlayer = useMemo(
+    () => players.find((entry) => entry.player.uid === user?.uid) ?? null,
+    [players, user?.uid],
+  );
+  const personalMatches = useMemo(() => {
+    if (!currentPlayer) {
+      return [];
+    }
+
+    return [...matches]
+      .filter(
+        (match) =>
+          match.playerOneId === currentPlayer.player.id ||
+          match.playerTwoId === currentPlayer.player.id,
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.playedAt).getTime() - new Date(a.playedAt).getTime(),
+      )
+      .slice(0, 5);
+  }, [currentPlayer, matches]);
+  const currentPlayerLabel =
+    currentPlayer?.player.name ?? user?.displayName ?? user?.email ?? "Jij";
+
+  const overviewHistory = useMemo(
+    () =>
+      accountOverview?.monthlyHistory.slice(-overviewRange) ?? [],
+    [accountOverview?.monthlyHistory, overviewRange],
+  );
+  const overviewTotals = accountOverview?.totals ?? null;
+  const overviewCurrentMonth = accountOverview?.currentMonth ?? overviewHistory.at(-1) ?? null;
+  const overviewWinrateSeries = useMemo(
+    () => overviewHistory.map((month) => (month.matches ? month.wins / month.matches : 0)),
+    [overviewHistory],
+  );
+  const overviewMatchSeries = useMemo(
+    () => overviewHistory.map((month) => month.matches),
+    [overviewHistory],
+  );
+
+  if (!activeGroup && accountOverview) {
+    return (
+      <div className="flex flex-col gap-8">
+        <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+          <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-5 shadow-card">
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div className="space-y-3">
+                <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
+                  Jouw overzicht
+                </p>
+                <h2 className="text-3xl font-semibold text-white">
+                  Goed om je weer te zien, {accountOverview.user.displayName ?? accountOverview.user.email ?? "speler"}.
+                </h2>
+                <p className="max-w-2xl text-sm text-slate-300">
+                  Hier zie je je totale vorm over alle groepen, met een maandfilter,
+                  recente activiteit en een overzicht van waar je het meest speelt.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {([1, 3, 6, 12] as const).map((months) => (
+                  <button
+                    key={months}
+                    type="button"
+                    onClick={() => setOverviewRange(months)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                      overviewRange === months
+                        ? "border-axoft-400 bg-axoft-500 text-slate-950"
+                        : "border-white/10 bg-white/5 text-slate-200 hover:border-white/20 hover:text-white"
+                    }`}
+                  >
+                    {months === 1 ? "Deze maand" : `Laatste ${months} mnd`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                  Matches
+                </p>
+                <p className="mt-2 text-3xl font-semibold text-white">
+                  {overviewTotals?.matches ?? 0}
+                </p>
+                <p className="mt-1 text-sm text-slate-400">
+                  {overviewRange === 1
+                    ? "Alleen deze maand"
+                    : "In de gekozen periode"}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                  Winrate
+                </p>
+                <p className="mt-2 text-3xl font-semibold text-white">
+                  {overviewTotals ? `${Math.round(overviewTotals.winRate * 100)}%` : "—"}
+                </p>
+                <p className="mt-1 text-sm text-slate-400">
+                  {overviewCurrentMonth ? overviewCurrentMonth.label : "Over al je groepen"}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                  Punten saldo
+                </p>
+                <p className="mt-2 text-3xl font-semibold text-white">
+                  {overviewTotals
+                    ? `${overviewTotals.pointsFor - overviewTotals.pointsAgainst >= 0 ? "+" : ""}${overviewTotals.pointsFor - overviewTotals.pointsAgainst}`
+                    : "—"}
+                </p>
+                <p className="mt-1 text-sm text-slate-400">Voor minus tegen</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                  Groepen
+                </p>
+                <p className="mt-2 text-3xl font-semibold text-white">
+                  {overviewTotals?.groupsPlayed ?? 0}
+                </p>
+                <p className="mt-1 text-sm text-slate-400">
+                  Waar jij actief bent geweest
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                      Maandgrafiek
+                    </p>
+                    <h3 className="mt-2 text-lg font-semibold text-white">
+                      Matches per maand
+                    </h3>
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                    {overviewHistory.length} punten
+                  </span>
+                </div>
+                <Sparkline values={overviewMatchSeries} className="mt-4 h-10 w-full" />
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  {overviewHistory.map((month) => (
+                    <div
+                      key={month.key}
+                      className="rounded-xl border border-white/10 bg-slate-950/60 p-3"
+                    >
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                        {month.label}
+                      </p>
+                      <p className="mt-1 text-lg font-semibold text-white">
+                        {month.matches} matches
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {month.wins} winst • {month.losses} verlies
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                      Vorm
+                    </p>
+                    <h3 className="mt-2 text-lg font-semibold text-white">
+                      Winrate trend
+                    </h3>
+                  </div>
+                </div>
+                <Sparkline values={overviewWinrateSeries.map((value) => Math.round(value * 100))} className="mt-4 h-10 w-full" />
+                <div className="mt-4 space-y-2">
+                  {accountOverview.recentMatches.map((match) => (
+                    <div
+                      key={match.id}
+                      className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm"
+                    >
+                      <div>
+                        <p className="font-medium text-white">{match.title}</p>
+                        <p className="text-xs text-slate-400">
+                          {match.groupName} · {new Date(match.playedAt).toLocaleDateString("nl-NL", {
+                            day: "2-digit",
+                            month: "short",
+                          })}
+                        </p>
+                      </div>
+                      <div className={`font-semibold ${match.won ? "text-emerald-300" : "text-rose-300"}`}>
+                        {match.scored}-{match.conceded}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-5 shadow-card">
+            <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
+              Groepen
+            </p>
+            <h3 className="mt-2 text-xl font-semibold text-white">
+              Waar je actief bent
+            </h3>
+            <div className="mt-4 space-y-3">
+              {accountOverview.groupSummaries.length ? (
+                accountOverview.groupSummaries.map((groupSummary) => (
+                  <div
+                    key={groupSummary.group.id}
+                    className="rounded-2xl border border-white/10 bg-slate-900/70 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-base font-semibold text-white">
+                          {groupSummary.group.name}
+                        </p>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                          {groupSummary.role === "owner" ? "Eigenaar" : "Lid"} · {groupSummary.group.memberCount} leden
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => selectGroup(groupSummary.group.id).catch(console.error)}
+                        className="rounded-full bg-axoft-500 px-3 py-1.5 text-xs font-semibold text-slate-950"
+                      >
+                        Openen
+                      </button>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                      <div className="rounded-xl bg-slate-950/50 p-3">
+                        <p className="text-xs text-slate-400">Matches</p>
+                        <p className="text-white">{groupSummary.matches}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-950/50 p-3">
+                        <p className="text-xs text-slate-400">Win%</p>
+                        <p className="text-white">
+                          {groupSummary.matches
+                            ? `${Math.round((groupSummary.wins / groupSummary.matches) * 100)}%`
+                            : "—"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl bg-slate-950/50 p-3">
+                        <p className="text-xs text-slate-400">Laatste</p>
+                        <p className="truncate text-white">
+                          {groupSummary.lastPlayedAt
+                            ? new Date(groupSummary.lastPlayedAt).toLocaleDateString("nl-NL", {
+                                day: "2-digit",
+                                month: "short",
+                              })
+                            : "—"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/50 p-4 text-sm text-slate-400">
+                  Nog geen groepen gekoppeld. Gebruik de sidebar om een groep te maken of te joinen.
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-8">
+      <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-5 shadow-card">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="space-y-3">
+              <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
+                Mijn dashboard
+              </p>
+              <h2 className="text-3xl font-semibold text-white">
+                Goed om je weer te zien, {currentPlayerLabel}.
+              </h2>
+              <p className="max-w-2xl text-sm text-slate-300">
+                {activeGroup
+                  ? `Je kijkt nu naar ${activeGroup.name}. Hier zie je jouw vorm, jouw groep en de laatste resultaten die echt tellen.`
+                  : "Je persoonlijke statistieken en groepsinzichten staan hier centraal."}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                Actieve groep
+              </p>
+              <p className="mt-1 text-lg font-semibold text-white">
+                {activeGroup?.name ?? "Geen groep geselecteerd"}
+              </p>
+              <p className="text-xs text-slate-400">
+                Persoonlijk &amp; groepsgericht overzicht
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                Jouw score
+              </p>
+              <p className="mt-2 text-3xl font-semibold text-white">
+                {currentPlayer ? `${Math.round(currentPlayer.winRate * 100)}%` : "—"}
+              </p>
+              <p className="mt-1 text-sm text-slate-400">
+                Winrate in deze groep
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                Huidige reeks
+              </p>
+              <p className="mt-2 text-3xl font-semibold text-white">
+                {currentPlayer ? currentPlayer.currentStreak : "—"}
+              </p>
+              <p className="mt-1 text-sm text-slate-400">
+                Achter elkaar gewonnen
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                Saldo
+              </p>
+              <p className="mt-2 text-3xl font-semibold text-white">
+                {currentPlayer
+                  ? `${currentPlayer.pointDifferential >= 0 ? "+" : ""}${currentPlayer.pointDifferential}`
+                  : "—"}
+              </p>
+              <p className="mt-1 text-sm text-slate-400">
+                Punten voor minus tegen
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-5 shadow-card">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
+                Mijn laatste potjes
+              </p>
+              <h3 className="mt-2 text-xl font-semibold text-white">
+                Laatste vijf resultaten
+              </h3>
+            </div>
+            <span className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
+              Persoonlijk
+            </span>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {currentPlayer ? (
+              personalMatches.length ? (
+                personalMatches.map((match) => {
+                  const isPlayerOne = match.playerOneId === currentPlayer.player.id;
+                  const opponent = isPlayerOne ? match.playerTwo : match.playerOne;
+                  const scored = isPlayerOne
+                    ? match.playerOnePoints
+                    : match.playerTwoPoints;
+                  const conceded = isPlayerOne
+                    ? match.playerTwoPoints
+                    : match.playerOnePoints;
+                  const won = match.winnerId === currentPlayer.player.id;
+
+                  return (
+                    <div
+                      key={match.id}
+                      className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm"
+                    >
+                      <div>
+                        <p className="font-medium text-white">
+                          {won ? "Gewonnen" : "Verloren"} tegen {opponent.name}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {new Date(match.playedAt).toLocaleDateString("nl-NL", {
+                            day: "2-digit",
+                            month: "short",
+                          })}{" "}
+                          · {match.season?.name ?? "Seizoen onbekend"}
+                        </p>
+                      </div>
+                      <div
+                        className={`text-sm font-semibold ${
+                          won ? "text-emerald-300" : "text-rose-300"
+                        }`}
+                      >
+                        {scored} - {conceded}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/40 p-4 text-sm text-slate-400">
+                  Nog geen wedstrijden van jou gevonden in deze groep.
+                </div>
+              )
+            ) : (
+              <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/40 p-4 text-sm text-slate-400">
+                Je account is nog niet gekoppeld aan een speler in deze groep.
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
       <section className="dashboard-stats-grid grid gap-4 md:grid-cols-3">
         <div className="dashboard-stat-card rounded-2xl border border-white/10 bg-slate-950/40 p-4 md:p-5">
           <div className="flex items-center justify-between">

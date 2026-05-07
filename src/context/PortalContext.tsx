@@ -7,6 +7,7 @@ import type {
 } from "../lib/api";
 
 export type PortalContextValue = {
+  portalMode: "hub" | "app";
   ready: boolean;
   user: PortalUser | null;
   groups: PortalGroup[];
@@ -15,9 +16,18 @@ export type PortalContextValue = {
   activeGroup: PortalGroup | null;
   logout: () => Promise<void>;
   refreshSession: () => Promise<void>;
-  createGroup: (payload: { name: string; joinCode: string }) => Promise<void>;
-  joinGroup: (payload: { groupId: string; joinCode: string }) => Promise<void>;
+  createGroup: (payload: { name: string; joinCode: string }) => Promise<{
+    group: PortalGroup;
+    membership: PortalMembership;
+  }>;
+  joinGroup: (payload: { groupId: string; joinCode: string }) => Promise<{
+    group: PortalGroup;
+    membership: PortalMembership;
+  }>;
+  selectOverall: () => Promise<void>;
   selectGroup: (groupId: string) => Promise<void>;
+  enterGroup: (groupId: string) => Promise<void>;
+  goToGroupHub: () => Promise<void>;
   session: PortalSession | null;
 };
 
@@ -42,4 +52,3 @@ export function usePortal() {
   }
   return context;
 }
-

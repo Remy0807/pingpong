@@ -4,6 +4,7 @@ import SoftGate from "./components/SoftGate";
 import { AppDataProvider } from "./context/AppDataContext";
 import {
   createDoublesMatch,
+  getAccountOverview,
   getMatches,
   getDoublesMatches,
   getPlayerStats,
@@ -17,6 +18,7 @@ import {
   updateMatch,
   deleteMatch,
   updateDoublesMatch,
+  type AccountOverview,
   type DoublesMatchPayload,
   type MatchPayload,
 } from "./lib/api";
@@ -35,12 +37,13 @@ import { DoublesPage } from "./pages/DoublesPage";
 import { usePortal } from "./context/PortalContext";
 
 function PortalAwareApp() {
-  const { activeGroupId } = usePortal();
+  const { portalMode, activeGroupId } = usePortal();
   const [players, setPlayers] = useState<PlayerStats[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [doublesMatches, setDoublesMatches] = useState<DoublesMatch[]>([]);
   const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
   const [currentSeasonId, setCurrentSeasonId] = useState<number | null>(null);
+  const [accountOverview, setAccountOverview] = useState<AccountOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingPlayer, setSavingPlayer] = useState(false);
@@ -74,6 +77,11 @@ function PortalAwareApp() {
     setCurrentSeasonId(seasonData.currentSeasonId ?? null);
   }, []);
 
+  const loadOverview = useCallback(async () => {
+    const overview = await getAccountOverview();
+    setAccountOverview(overview);
+  }, []);
+
   const refreshAll = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -93,10 +101,42 @@ function PortalAwareApp() {
   }, [loadPlayers, loadMatches, loadDoublesMatches, loadSeasons]);
 
   useEffect(() => {
+    if (portalMode !== "app") {
+      setLoading(false);
+      setError(null);
+      setPlayers([]);
+      setMatches([]);
+      setDoublesMatches([]);
+      setSeasons([]);
+      setCurrentSeasonId(null);
+      setAccountOverview(null);
+      return;
+    }
+
+    if (!activeGroupId) {
+      setPlayers([]);
+      setMatches([]);
+      setDoublesMatches([]);
+      setSeasons([]);
+      setCurrentSeasonId(null);
+      setLoading(true);
+      setError(null);
+      loadOverview()
+        .catch((err) => {
+          setError(err instanceof Error ? err.message : "Kon overzicht niet laden.");
+          console.error(err);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+      return;
+    }
+
+    setAccountOverview(null);
     refreshAll().catch((err) => {
       console.error(err);
     });
-  }, [refreshAll, activeGroupId]);
+  }, [activeGroupId, loadOverview, portalMode, refreshAll]);
 
   const handlePlayerCreate = useCallback(
     async (name: string) => {
@@ -308,6 +348,7 @@ function PortalAwareApp() {
       doublesMatches,
       seasons,
       currentSeasonId,
+      accountOverview,
       loading,
       error,
       savingPlayer,
@@ -338,6 +379,7 @@ function PortalAwareApp() {
       doublesMatches,
       seasons,
       currentSeasonId,
+      accountOverview,
       loading,
       error,
       savingPlayer,

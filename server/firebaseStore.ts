@@ -379,6 +379,13 @@ class FirebaseStore {
     return next;
   }
 
+  async getPortalUser(uid: string) {
+    const snapshot = await this.portalCollection("users").doc(uid).get();
+    return snapshot.exists
+      ? fromPortalUserDoc(snapshot as QueryDocumentSnapshot<DocumentData>)
+      : null;
+  }
+
   async listGroups() {
     const snapshot = await this.portalCollection("groups").get();
     return snapshot.docs.map(fromPortalGroupDoc);
@@ -394,6 +401,13 @@ class FirebaseStore {
   async listMembershipsForUser(uid: string) {
     const snapshot = await this.portalCollection("memberships")
       .where("uid", "==", uid)
+      .get();
+    return snapshot.docs.map(fromPortalMembershipDoc);
+  }
+
+  async listMembershipsForGroup(groupId: string) {
+    const snapshot = await this.portalCollection("memberships")
+      .where("groupId", "==", groupId)
       .get();
     return snapshot.docs.map(fromPortalMembershipDoc);
   }
@@ -452,6 +466,29 @@ class FirebaseStore {
     return { group, membership };
   }
 
+  async updateGroup(
+    groupId: string,
+    payload: {
+      name?: string;
+      joinCode?: string;
+    }
+  ) {
+    const group = await this.getGroup(groupId);
+    if (!group) {
+      throw new FirebaseNotFoundError("Groep niet gevonden.");
+    }
+
+    const updated: PortalGroupRecord = {
+      ...group,
+      name: payload.name?.trim() || group.name,
+      joinCode: payload.joinCode?.trim() || group.joinCode,
+      updatedAt: new Date(),
+    };
+
+    await this.portalCollection("groups").doc(groupId).set(updated);
+    return updated;
+  }
+
   async joinGroup(payload: {
     uid: string;
     email: string | null;
@@ -507,6 +544,18 @@ class FirebaseStore {
       : null;
   }
 
+  async removeMembership(groupId: string, uid: string) {
+    const membership = await this.getMembership(uid, groupId);
+    if (!membership) {
+      throw new FirebaseNotFoundError("Lidmaatschap niet gevonden.");
+    }
+
+    await this.portalCollection("memberships")
+      .doc(`${groupId}:${uid}`)
+      .delete();
+    return membership;
+  }
+
   async getPortalSession(
     userInfo: { uid: string; email: string | null; displayName: string | null },
     activeGroupId?: string | null
@@ -531,7 +580,7 @@ class FirebaseStore {
         memberCount: allMemberships.filter((membership) => membership.groupId === group.id).length,
       })),
       memberships,
-      activeGroupId: activeGroup?.id ?? memberships[0]?.groupId ?? null,
+      activeGroupId: activeGroup?.id ?? null,
     };
   }
 
@@ -545,6 +594,14 @@ class FirebaseStore {
       .doc(String(id))
       .get();
     return doc.exists ? fromPlayerDoc(doc as QueryDocumentSnapshot<DocumentData>) : null;
+  }
+
+  async getPlayerByUid(groupId: string, uid: string) {
+    const snapshot = await this.groupCollection(groupId, "players")
+      .where("uid", "==", uid)
+      .limit(1)
+      .get();
+    return snapshot.empty ? null : fromPlayerDoc(snapshot.docs[0] as QueryDocumentSnapshot<DocumentData>);
   }
 
   async getPlayersByIds(groupId: string, ids: number[]) {

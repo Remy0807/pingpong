@@ -2,6 +2,7 @@ import type { PlayerBadge } from "../shared/badges";
 
 export type Player = {
   id: number;
+  uid?: string | null;
   name: string;
   createdAt: string;
   updatedAt: string;

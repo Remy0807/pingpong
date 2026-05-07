@@ -78,6 +78,7 @@ export type PortalGroup = {
 };
 
 export type PortalMembership = {
+  uid: string;
   groupId: string;
   role: "owner" | "member";
   joinedAt: string;
@@ -96,8 +97,64 @@ export type PortalSession = {
   activeGroupId: string | null;
 };
 
+export type AccountActivity = {
+  id: string;
+  groupId: string;
+  groupName: string;
+  playedAt: string;
+  kind: "singles" | "doubles";
+  title: string;
+  detail: string;
+  won: boolean;
+  scored: number;
+  conceded: number;
+};
+
+export type AccountMonthSummary = {
+  key: string;
+  label: string;
+  matches: number;
+  wins: number;
+  losses: number;
+  pointsFor: number;
+  pointsAgainst: number;
+};
+
+export type AccountGroupSummary = {
+  group: PortalGroup;
+  role: "owner" | "member";
+  matches: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  lastPlayedAt: string | null;
+};
+
+export type AccountOverview = {
+  user: PortalUser;
+  memberships: PortalMembership[];
+  groups: PortalGroup[];
+  totals: {
+    matches: number;
+    wins: number;
+    losses: number;
+    winRate: number;
+    pointsFor: number;
+    pointsAgainst: number;
+    groupsPlayed: number;
+  };
+  currentMonth: AccountMonthSummary | null;
+  monthlyHistory: AccountMonthSummary[];
+  recentMatches: AccountActivity[];
+  groupSummaries: AccountGroupSummary[];
+};
+
 export function getPortalSession(): Promise<PortalSession> {
   return request<PortalSession>("/api/portal/session");
+}
+
+export function getAccountOverview(): Promise<AccountOverview> {
+  return request<AccountOverview>("/api/account/overview");
 }
 
 export function getPortalGroups(): Promise<PortalGroup[]> {
@@ -121,6 +178,50 @@ export function joinPortalGroup(payload: {
   return request<{ group: PortalGroup; membership: PortalMembership }>(`/api/portal/groups/${payload.groupId}/join`, {
     method: "POST",
     body: JSON.stringify({ joinCode: payload.joinCode }),
+  });
+}
+
+export type PortalGroupMember = {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  role: "owner" | "member";
+  joinedAt: string;
+};
+
+export type PortalGroupDetails = {
+  group: PortalGroup & { memberCount: number };
+  viewerRole: "owner" | "member";
+  joinCode: string | null;
+  members: PortalGroupMember[];
+};
+
+export function getPortalGroup(groupId: string): Promise<PortalGroupDetails> {
+  return request<PortalGroupDetails>(`/api/portal/groups/${groupId}`);
+}
+
+export function updatePortalGroup(
+  groupId: string,
+  payload: { name?: string; joinCode?: string }
+): Promise<{ group: PortalGroup & { memberCount: number } }> {
+  return request<{ group: PortalGroup & { memberCount: number } }>(
+    `/api/portal/groups/${groupId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export function removePortalGroupMember(groupId: string, uid: string) {
+  return request<void>(`/api/portal/groups/${groupId}/members/${uid}`, {
+    method: "DELETE",
+  });
+}
+
+export function leavePortalGroup(groupId: string) {
+  return request<void>(`/api/portal/groups/${groupId}/membership`, {
+    method: "DELETE",
   });
 }
 

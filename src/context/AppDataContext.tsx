@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import type { DoublesMatch, Match, PlayerStats, SeasonSummary } from "../types";
 import type { DoublesMatchPayload, MatchPayload } from "../lib/api";
+import type { AccountOverview } from "../lib/api";
 
 export type AppDataContextValue = {
   players: PlayerStats[];
@@ -8,6 +9,7 @@ export type AppDataContextValue = {
   doublesMatches: DoublesMatch[];
   seasons: SeasonSummary[];
   currentSeasonId: number | null;
+  accountOverview: AccountOverview | null;
   loading: boolean;
   error: string | null;
   savingPlayer: boolean;
