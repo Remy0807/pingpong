@@ -28,6 +28,7 @@ export type PortalContextValue = {
   selectGroup: (groupId: string) => Promise<void>;
   enterGroup: (groupId: string) => Promise<void>;
   goToGroupHub: () => Promise<void>;
+  updateDisplayName: (displayName: string) => Promise<void>;
   session: PortalSession | null;
 };
 

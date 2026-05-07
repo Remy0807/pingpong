@@ -502,6 +502,17 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
       localStorage.removeItem("pp_active_group_id");
       await refreshSession();
     },
+    updateDisplayName: async (displayName) => {
+      const nextDisplayName = displayName.trim();
+      if (!firebaseAuth.currentUser) {
+        throw new Error("Inloggen vereist.");
+      }
+      await updateProfile(firebaseAuth.currentUser, {
+        displayName: nextDisplayName || null,
+      });
+      await firebaseAuth.currentUser.getIdToken(true);
+      await refreshSession();
+    },
     session: portalSession,
   };
 
