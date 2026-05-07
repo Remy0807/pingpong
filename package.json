@@ -6,18 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && npm run server:build",
+    "start": "node dist/server/server/index.js",
     "server:build": "tsc -p tsconfig.server.json",
     "server:start": "node dist/server/server/index.js",
     "preview": "vite preview",
-    "server:dev": "tsx watch server/index.ts",
-    "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts"
+    "server:dev": "tsx watch server/index.ts"
   },
   "dependencies": {
-    "@prisma/client": "^5.10.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.18.2",
+    "firebase-admin": "^13.8.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.3"
@@ -31,7 +30,6 @@
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
     "postcss": "^8.4.35",
-    "prisma": "^5.10.2",
     "tailwindcss": "^3.4.1",
     "tsx": "^4.7.0",
     "typescript": "^5.4.2",

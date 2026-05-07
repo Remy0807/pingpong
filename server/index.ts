@@ -5,23 +5,28 @@ import express, {
   type Response,
 } from "express";
 import cors from "cors";
-import { PrismaClient, Prisma } from "@prisma/client";
 import {
   createPlayerBadge,
   type BadgeId,
   type PlayerBadge,
 } from "../shared/badges.js";
+import {
+  store,
+  type DoublesMatchWithRelations,
+  type MatchWithRelations,
+  type PlayerWithRelations,
+  type SeasonRecord,
+} from "./firebaseStore.js";
 
-const prisma = new PrismaClient();
 const app = express();
 const PORT = Number(process.env.PORT) || 4000;
 const TEAMS_WEBHOOK_URL = process.env.TEAMS_WEBHOOK_URL;
 
-type PrismaErrorWithCode = { code: string };
+type StoreErrorWithCode = { code: string };
 
-const isPrismaErrorWithCode = (
+const isStoreErrorWithCode = (
   error: unknown
-): error is PrismaErrorWithCode => {
+): error is StoreErrorWithCode => {
   return (
     typeof error === "object" &&
     error !== null &&
@@ -32,19 +37,6 @@ const isPrismaErrorWithCode = (
 
 app.use(cors());
 app.use(express.json());
-
-// Serve static files from the dist directory
-app.use(express.static("dist"));
-
-// Handle SPA routing - send all non-API requests to index.html
-app.get(/^(?!\/api\/)/, (req, res) => {
-  res.sendFile("index.html", { root: "dist" });
-});
-
-type PlayerWithRelations = Awaited<
-  ReturnType<typeof fetchPlayersWithRelations>
->[number];
-type SeasonRecord = Prisma.SeasonGetPayload<{}>;
 
 const seasonCreationLocks = new Map<string, Promise<SeasonRecord>>();
 
@@ -71,61 +63,7 @@ const buildSeasonName = (date: Date) => {
 };
 
 async function deduplicateSeasons() {
-  const seasons = await prisma.season.findMany({
-    orderBy: [{ startDate: "asc" }, { id: "asc" }],
-  });
-
-  const groups = new Map<string, SeasonRecord[]>();
-  seasons.forEach((season) => {
-    const key = `${season.startDate.toISOString()}|${season.endDate.toISOString()}`;
-    const bucket = groups.get(key) ?? [];
-    bucket.push(season);
-    groups.set(key, bucket);
-  });
-
-  let removed = 0;
-  for (const group of groups.values()) {
-    if (group.length < 2) {
-      continue;
-    }
-
-    const [primary, ...duplicates] = group;
-    const duplicateIds = duplicates.map((season) => season.id);
-    const fallbackChampionId = duplicates.find(
-      (season) => season.championId != null
-    )?.championId;
-    const nextChampionId = primary.championId ?? fallbackChampionId ?? null;
-
-    await prisma.$transaction(async (tx) => {
-      if (duplicateIds.length) {
-        await tx.match.updateMany({
-          where: { seasonId: { in: duplicateIds } },
-          data: { seasonId: primary.id },
-        });
-        await tx.doublesMatch.updateMany({
-          where: { seasonId: { in: duplicateIds } },
-          data: { seasonId: primary.id },
-        });
-      }
-
-      if (nextChampionId != null && primary.championId == null) {
-        await tx.season.update({
-          where: { id: primary.id },
-          data: { championId: nextChampionId },
-        });
-      }
-
-      if (duplicateIds.length) {
-        await tx.season.deleteMany({
-          where: { id: { in: duplicateIds } },
-        });
-      }
-    });
-
-    removed += duplicateIds.length;
-  }
-
-  return removed;
+  return store.deleteDuplicateSeasons();
 }
 
 async function getOrCreateSeasonForDate(date: Date) {
@@ -137,33 +75,24 @@ async function getOrCreateSeasonForDate(date: Date) {
 
   const operation = (async (): Promise<SeasonRecord> => {
     const { start, end } = getSeasonBoundaries(date);
-    const existing = await prisma.season.findFirst({
-      where: {
-        startDate: { lte: date },
-        endDate: { gte: date },
-      },
-    });
+    const existing = await store.findSeasonForDate(date);
 
     if (existing) {
       return existing;
     }
 
     try {
-      return await prisma.season.create({
-        data: {
-          name: `Seizoen ${buildSeasonName(date)}`,
-          startDate: start,
-          endDate: end,
-        },
+      return await store.createSeason({
+        name: `Seizoen ${buildSeasonName(date)}`,
+        startDate: start,
+        endDate: end,
       });
     } catch (error) {
-      if (isPrismaErrorWithCode(error) && error.code === "P2002") {
-        const createdByOtherRequest = await prisma.season.findFirst({
-          where: {
-            startDate: start,
-            endDate: end,
-          },
-        });
+      if (isStoreErrorWithCode(error) && error.code === "P2002") {
+        const createdByOtherRequest = await store.findSeasonByBoundaries(
+          start,
+          end
+        );
         if (createdByOtherRequest) {
           return createdByOtherRequest;
         }
@@ -379,61 +308,11 @@ const buildPlayerStats = (
 };
 
 async function fetchPlayersWithRelations(playerId?: number) {
-  return prisma.player.findMany({
-    where: playerId ? { id: playerId } : undefined,
-    orderBy: { name: "asc" },
-    include: {
-      matchesAsPlayerOne: true,
-      matchesAsPlayerTwo: true,
-      matchesWon: true,
-    },
-  });
+  return store.fetchPlayersWithRelations(playerId);
 }
 
-const matchInclude = {
-  playerOne: true,
-  playerTwo: true,
-  winner: true,
-  season: true,
-} as const;
-
-const doublesMatchInclude = {
-  teamOnePlayerA: true,
-  teamOnePlayerB: true,
-  teamTwoPlayerA: true,
-  teamTwoPlayerB: true,
-  season: true,
-} as const;
-
-type MatchWithRelations = Prisma.MatchGetPayload<{
-  include: typeof matchInclude;
-}>;
-
-type DoublesMatchWithRelations = Prisma.DoublesMatchGetPayload<{
-  include: typeof doublesMatchInclude;
-}>;
-
 const getChampionCounts = async () => {
-  const championGroups = await prisma.season.groupBy({
-    by: ["championId"],
-    _count: {
-      championId: true,
-    },
-    where: {
-      championId: {
-        not: null,
-      },
-    },
-  });
-
-  const map = new Map<number, number>();
-  championGroups.forEach((group) => {
-    if (group.championId != null) {
-      map.set(group.championId, group._count.championId);
-    }
-  });
-
-  return map;
+  return store.getChampionCounts();
 };
 
 type SeasonStanding = {
@@ -573,14 +452,7 @@ const calculateSeasonStandings = (
 
 const ensurePastSeasonChampions = async () => {
   const now = new Date();
-  const pastSeasons = await prisma.season.findMany({
-    where: { endDate: { lt: now } },
-    include: {
-      matches: {
-        include: matchInclude,
-      },
-    },
-  });
+  const pastSeasons = await store.listPastSeasonsWithMatches(now);
 
   await Promise.all(
     pastSeasons.map(async (season) => {
@@ -592,10 +464,7 @@ const ensurePastSeasonChampions = async () => {
       if (season.championId === championId) {
         return;
       }
-      await prisma.season.update({
-        where: { id: season.id },
-        data: { championId },
-      });
+      await store.updateSeason(season.id, { championId });
     })
   );
 };
@@ -614,11 +483,13 @@ type CurrentSeasonTopEntry = {
 
 const getCurrentSeasonLeaderboardSnapshot = async () => {
   const currentSeason = await getOrCreateSeasonForDate(new Date());
-  const seasonMatches = await prisma.match.findMany({
-    where: { seasonId: currentSeason.id },
-    include: matchInclude,
-    orderBy: { playedAt: "asc" },
-  });
+  const seasonMatches = (
+    await Promise.all(
+      (await store.listMatches())
+        .filter((match) => match.seasonId === currentSeason.id)
+        .map((match) => store.hydrateMatch(match))
+    )
+  ).sort((a, b) => a.playedAt.getTime() - b.playedAt.getTime());
 
   const standings = calculateSeasonStandings(seasonMatches);
   const topFive: CurrentSeasonTopEntry[] = standings
@@ -1166,10 +1037,11 @@ const buildMatchRecommendations = async () => {
   const [currentSeason, players, matches, championCounts] = await Promise.all([
     getOrCreateSeasonForDate(now),
     fetchPlayersWithRelations(),
-    prisma.match.findMany({
-      include: matchInclude,
-      orderBy: { playedAt: "desc" },
-    }),
+    Promise.all(
+      (await store.listMatches())
+        .sort((a, b) => b.playedAt.getTime() - a.playedAt.getTime())
+        .map((match) => store.hydrateMatch(match))
+    ),
     getChampionCounts(),
   ]);
 
@@ -1415,9 +1287,7 @@ app.post("/api/players", async (req, res, next) => {
   }
 
   try {
-    const player = await prisma.player.create({
-      data: { name: name.trim() },
-    });
+    const player = await store.createPlayer(name.trim());
 
     const [playerWithRelations, currentSeason, championCounts] =
       await Promise.all([
@@ -1446,7 +1316,7 @@ app.post("/api/players", async (req, res, next) => {
 
     res.status(201).json(stats);
   } catch (error: unknown) {
-    if (isPrismaErrorWithCode(error) && error.code === "P2002") {
+    if (isStoreErrorWithCode(error) && error.code === "P2002") {
       return res.status(409).json({ message: "Deze speler bestaat al." });
     }
     next(error);
@@ -1465,17 +1335,14 @@ app.patch("/api/players/:id", async (req, res, next) => {
   }
 
   try {
-    const existingPlayer = await prisma.player.findUnique({
-      where: { id: playerId },
-    });
+    const existingPlayer = await store.getPlayer(playerId);
 
     if (!existingPlayer) {
       return res.status(404).json({ message: "Speler niet gevonden." });
     }
 
-    const updatedPlayer = await prisma.player.update({
-      where: { id: playerId },
-      data: { name: name.trim() },
+    const updatedPlayer = await store.updatePlayer(playerId, {
+      name: name.trim(),
     });
 
     const [playerWithRelations, currentSeason, championCounts] =
@@ -1505,10 +1372,10 @@ app.patch("/api/players/:id", async (req, res, next) => {
 
     res.json(stats);
   } catch (error: unknown) {
-    if (isPrismaErrorWithCode(error) && error.code === "P2025") {
+    if (isStoreErrorWithCode(error) && error.code === "P2025") {
       return res.status(404).json({ message: "Speler niet gevonden." });
     }
-    if (isPrismaErrorWithCode(error) && error.code === "P2002") {
+    if (isStoreErrorWithCode(error) && error.code === "P2002") {
       return res.status(409).json({ message: "Deze speler bestaat al." });
     }
     next(error);
@@ -1522,32 +1389,13 @@ app.delete("/api/players/:id", async (req, res, next) => {
   }
 
   try {
-    const player = await prisma.player.findUnique({
-      where: { id: playerId },
-    });
+    const player = await store.getPlayer(playerId);
 
     if (!player) {
       return res.status(404).json({ message: "Speler niet gevonden." });
     }
 
-    await prisma.$transaction([
-      prisma.match.deleteMany({
-        where: {
-          OR: [{ playerOneId: playerId }, { playerTwoId: playerId }],
-        },
-      }),
-      prisma.doublesMatch.deleteMany({
-        where: {
-          OR: [
-            { teamOnePlayerAId: playerId },
-            { teamOnePlayerBId: playerId },
-            { teamTwoPlayerAId: playerId },
-            { teamTwoPlayerBId: playerId },
-          ],
-        },
-      }),
-      prisma.player.delete({ where: { id: playerId } }),
-    ]);
+    await store.deletePlayer(playerId);
 
     notifyTeamsPlayerChange({ type: "deleted", name: player.name }).catch(
       (error) => {
@@ -1563,10 +1411,11 @@ app.delete("/api/players/:id", async (req, res, next) => {
 
 app.get("/api/matches", async (_req, res, next) => {
   try {
-    const matches = await prisma.match.findMany({
-      orderBy: { playedAt: "desc" },
-      include: matchInclude,
-    });
+    const matches = (
+      await Promise.all(
+        (await store.listMatches()).map((match) => store.hydrateMatch(match))
+      )
+    ).sort((a, b) => b.playedAt.getTime() - a.playedAt.getTime());
 
     const corrected = await Promise.all(
       matches.map(async (match) => {
@@ -1574,11 +1423,9 @@ app.get("/api/matches", async (_req, res, next) => {
           return match;
         }
         const season = await getOrCreateSeasonForDate(match.playedAt);
-        return prisma.match.update({
-          where: { id: match.id },
-          data: { seasonId: season.id },
-          include: matchInclude,
-        });
+        return store.hydrateMatch(
+          await store.updateMatch(match.id, { seasonId: season.id })
+        );
       })
     );
 
@@ -1637,8 +1484,8 @@ app.post("/api/matches", async (req, res, next) => {
 
   try {
     const [playerOne, playerTwo] = await Promise.all([
-      prisma.player.findUnique({ where: { id: playerOneId } }),
-      prisma.player.findUnique({ where: { id: playerTwoId } }),
+      store.getPlayer(playerOneId),
+      store.getPlayer(playerTwoId),
     ]);
 
     if (!playerOne || !playerTwo) {
@@ -1650,8 +1497,8 @@ app.post("/api/matches", async (req, res, next) => {
     const winnerId =
       playerOnePoints > playerTwoPoints ? playerOneId : playerTwoId;
 
-    const match = await prisma.match.create({
-      data: {
+    const match = await store.hydrateMatch(
+      await store.createMatch({
         playerOneId,
         playerTwoId,
         playerOnePoints,
@@ -1659,9 +1506,8 @@ app.post("/api/matches", async (req, res, next) => {
         winnerId,
         playedAt: playedDate,
         seasonId: season.id,
-      },
-      include: matchInclude,
-    });
+      })
+    );
 
     notifyTeamsMatchCreated(match).catch((error) => {
       console.error("Teams notificatie mislukt", error);
@@ -1688,9 +1534,7 @@ app.patch("/api/matches/:id", async (req, res, next) => {
   } = req.body ?? {};
 
   try {
-    const existing = await prisma.match.findUnique({
-      where: { id: matchId },
-    });
+    const existing = await store.getMatch(matchId);
 
     if (!existing) {
       return res.status(404).json({ message: "Wedstrijd niet gevonden." });
@@ -1728,8 +1572,8 @@ app.patch("/api/matches/:id", async (req, res, next) => {
     }
 
     const [playerOne, playerTwo] = await Promise.all([
-      prisma.player.findUnique({ where: { id: nextPlayerOneId } }),
-      prisma.player.findUnique({ where: { id: nextPlayerTwoId } }),
+      store.getPlayer(nextPlayerOneId),
+      store.getPlayer(nextPlayerTwoId),
     ]);
 
     if (!playerOne || !playerTwo) {
@@ -1743,9 +1587,8 @@ app.patch("/api/matches/:id", async (req, res, next) => {
         ? nextPlayerOneId
         : nextPlayerTwoId;
 
-    const updated = await prisma.match.update({
-      where: { id: matchId },
-      data: {
+    const updated = await store.hydrateMatch(
+      await store.updateMatch(matchId, {
         playerOneId: nextPlayerOneId,
         playerTwoId: nextPlayerTwoId,
         playerOnePoints: nextPlayerOnePoints,
@@ -1753,9 +1596,8 @@ app.patch("/api/matches/:id", async (req, res, next) => {
         winnerId,
         playedAt: nextPlayedAt,
         seasonId: season.id,
-      },
-      include: matchInclude,
-    });
+      })
+    );
 
     notifyTeamsMatchUpdated(updated).catch((error) => {
       console.error("Teams notificatie mislukt", error);
@@ -1774,18 +1616,14 @@ app.delete("/api/matches/:id", async (req, res, next) => {
   }
 
   try {
-    const existing = await prisma.match.findUnique({
-      where: { id: matchId },
-      include: matchInclude,
-    });
+    const existingMatch = await store.getMatch(matchId);
 
-    if (!existing) {
+    if (!existingMatch) {
       return res.status(404).json({ message: "Wedstrijd niet gevonden." });
     }
 
-    await prisma.match.delete({
-      where: { id: matchId },
-    });
+    const existing = await store.hydrateMatch(existingMatch);
+    await store.deleteMatch(matchId);
 
     notifyTeamsMatchDeleted(existing).catch((error) => {
       console.error("Teams notificatie mislukt", error);
@@ -1793,7 +1631,7 @@ app.delete("/api/matches/:id", async (req, res, next) => {
 
     res.status(204).end();
   } catch (error) {
-    if (isPrismaErrorWithCode(error) && error.code === "P2025") {
+    if (isStoreErrorWithCode(error) && error.code === "P2025") {
       return res.status(404).json({ message: "Wedstrijd niet gevonden." });
     }
     next(error);
@@ -1802,10 +1640,13 @@ app.delete("/api/matches/:id", async (req, res, next) => {
 
 app.get("/api/doubles-matches", async (_req, res, next) => {
   try {
-    const matches = await prisma.doublesMatch.findMany({
-      orderBy: { playedAt: "desc" },
-      include: doublesMatchInclude,
-    });
+    const matches = (
+      await Promise.all(
+        (await store.listDoublesMatches()).map((match) =>
+          store.hydrateDoublesMatch(match)
+        )
+      )
+    ).sort((a, b) => b.playedAt.getTime() - a.playedAt.getTime());
 
     const corrected = await Promise.all(
       matches.map(async (match) => {
@@ -1814,11 +1655,9 @@ app.get("/api/doubles-matches", async (_req, res, next) => {
         }
 
         const season = await getOrCreateSeasonForDate(match.playedAt);
-        return prisma.doublesMatch.update({
-          where: { id: match.id },
-          data: { seasonId: season.id },
-          include: doublesMatchInclude,
-        });
+        return store.hydrateDoublesMatch(
+          await store.updateDoublesMatch(match.id, { seasonId: season.id })
+        );
       })
     );
 
@@ -1871,10 +1710,7 @@ app.post("/api/doubles-matches", async (req, res, next) => {
   }
 
   try {
-    const players = await prisma.player.findMany({
-      where: { id: { in: playerIds } },
-      select: { id: true },
-    });
+    const players = await store.getPlayersByIds(playerIds);
 
     if (players.length !== 4) {
       return res.status(404).json({ message: "Een of meer spelers bestaan niet." });
@@ -1884,8 +1720,8 @@ app.post("/api/doubles-matches", async (req, res, next) => {
     const season = await getOrCreateSeasonForDate(playedDate);
     const winnerTeam = teamOnePoints > teamTwoPoints ? 1 : 2;
 
-    const match = await prisma.doublesMatch.create({
-      data: {
+    const match = await store.hydrateDoublesMatch(
+      await store.createDoublesMatch({
         teamOnePlayerAId,
         teamOnePlayerBId,
         teamTwoPlayerAId,
@@ -1895,9 +1731,8 @@ app.post("/api/doubles-matches", async (req, res, next) => {
         winnerTeam,
         playedAt: playedDate,
         seasonId: season.id,
-      },
-      include: doublesMatchInclude,
-    });
+      })
+    );
 
     res.status(201).json(serializeDoublesMatch(match));
   } catch (error) {
@@ -1922,9 +1757,7 @@ app.patch("/api/doubles-matches/:id", async (req, res, next) => {
   } = req.body ?? {};
 
   try {
-    const existing = await prisma.doublesMatch.findUnique({
-      where: { id: matchId },
-    });
+    const existing = await store.getDoublesMatch(matchId);
 
     if (!existing) {
       return res.status(404).json({ message: "Wedstrijd niet gevonden." });
@@ -1979,10 +1812,7 @@ app.patch("/api/doubles-matches/:id", async (req, res, next) => {
         .json({ message: "Scores kunnen niet negatief zijn." });
     }
 
-    const players = await prisma.player.findMany({
-      where: { id: { in: playerIds } },
-      select: { id: true },
-    });
+    const players = await store.getPlayersByIds(playerIds);
 
     if (players.length !== 4) {
       return res.status(404).json({ message: "Een of meer spelers bestaan niet." });
@@ -1992,9 +1822,8 @@ app.patch("/api/doubles-matches/:id", async (req, res, next) => {
     const season = await getOrCreateSeasonForDate(nextPlayedAt);
     const winnerTeam = nextTeamOnePoints > nextTeamTwoPoints ? 1 : 2;
 
-    const updated = await prisma.doublesMatch.update({
-      where: { id: matchId },
-      data: {
+    const updated = await store.hydrateDoublesMatch(
+      await store.updateDoublesMatch(matchId, {
         teamOnePlayerAId: nextTeamOnePlayerAId,
         teamOnePlayerBId: nextTeamOnePlayerBId,
         teamTwoPlayerAId: nextTeamTwoPlayerAId,
@@ -2004,9 +1833,8 @@ app.patch("/api/doubles-matches/:id", async (req, res, next) => {
         winnerTeam,
         playedAt: nextPlayedAt,
         seasonId: season.id,
-      },
-      include: doublesMatchInclude,
-    });
+      })
+    );
 
     res.json(serializeDoublesMatch(updated));
   } catch (error) {
@@ -2021,21 +1849,17 @@ app.delete("/api/doubles-matches/:id", async (req, res, next) => {
   }
 
   try {
-    const existing = await prisma.doublesMatch.findUnique({
-      where: { id: matchId },
-    });
+    const existing = await store.getDoublesMatch(matchId);
 
     if (!existing) {
       return res.status(404).json({ message: "Wedstrijd niet gevonden." });
     }
 
-    await prisma.doublesMatch.delete({
-      where: { id: matchId },
-    });
+    await store.deleteDoublesMatch(matchId);
 
     res.status(204).end();
   } catch (error) {
-    if (isPrismaErrorWithCode(error) && error.code === "P2025") {
+    if (isStoreErrorWithCode(error) && error.code === "P2025") {
       return res.status(404).json({ message: "Wedstrijd niet gevonden." });
     }
     next(error);
@@ -2046,15 +1870,7 @@ app.get("/api/seasons", async (_req, res, next) => {
   try {
     await ensurePastSeasonChampions();
     const [seasons, currentSeason] = await Promise.all([
-      prisma.season.findMany({
-        orderBy: { startDate: "desc" },
-        include: {
-          matches: {
-            include: matchInclude,
-          },
-          champion: true,
-        },
-      }),
+      store.listSeasonSummaries(),
       getOrCreateSeasonForDate(new Date()),
     ]);
 
@@ -2071,10 +1887,7 @@ app.get("/api/seasons", async (_req, res, next) => {
           const championId = standings[0].player.id;
           championPayload = standings[0].player;
           if (season.championId == null || season.championId !== championId) {
-            await prisma.season.update({
-              where: { id: season.id },
-              data: { championId },
-            });
+            await store.updateSeason(season.id, { championId });
           }
         }
 
@@ -2121,6 +1934,14 @@ app.get("/api/recommendations", async (_req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+// Serve static files from the dist directory after API routes.
+app.use(express.static("dist"));
+
+// Handle SPA routing - send all non-API requests to index.html.
+app.get(/^(?!\/api\/)/, (_req, res) => {
+  res.sendFile("index.html", { root: "dist" });
 });
 
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
