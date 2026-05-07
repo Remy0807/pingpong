@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { MatchesTable } from "../components/MatchesTable";
 import { MatchEditorModal } from "../components/MatchEditorModal";
 import { MatchForm } from "../components/MatchForm";
-import { PlayerForm } from "../components/PlayerForm";
 import { Modal } from "../components/Modal";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
@@ -28,18 +27,15 @@ export function MatchesPage() {
     players,
     matches,
     seasons,
-    savingPlayer,
     savingMatch,
     updatingMatch,
     deletingMatchId,
-    createPlayer,
     createMatches,
     updateMatch,
     deleteMatch,
   } = useAppData();
 
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
-  const [createPlayerOpen, setCreatePlayerOpen] = useState(false);
   const [createMatchOpen, setCreateMatchOpen] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<Match | null>(null);
   const [viewMode, setViewMode] = useState<MatchViewMode>("grouped");
@@ -149,11 +145,6 @@ export function MatchesPage() {
     };
   }, [filteredAndSortedMatches]);
 
-  const handleCreatePlayer = async (name: string) => {
-    await createPlayer(name);
-    setCreatePlayerOpen(false);
-  };
-
   const handleCreateMatches = async (
     payloads: Parameters<typeof createMatches>[0]
   ) => {
@@ -190,20 +181,12 @@ export function MatchesPage() {
           </Link>
           <button
             type="button"
-            onClick={() => setCreateMatchOpen(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-axoft-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-axoft-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-950 focus:ring-axoft-500"
-          >
-            <span className="text-lg leading-none">+</span>
-            Nieuw potje
-          </button>
-          <button
-            type="button"
-            onClick={() => setCreatePlayerOpen(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-axoft-400 hover:text-axoft-100 focus:outline-none focus:ring-2 focus:ring-axoft-500/30"
-          >
-            <span className="text-lg leading-none">+</span>
-            Nieuwe speler
-          </button>
+          onClick={() => setCreateMatchOpen(true)}
+          className="inline-flex items-center gap-2 rounded-lg bg-axoft-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-axoft-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-950 focus:ring-axoft-500"
+        >
+          <span className="text-lg leading-none">+</span>
+          Nieuw potje
+        </button>
         </div>
       </section>
 
@@ -335,21 +318,6 @@ export function MatchesPage() {
         onClose={() => setEditingMatch(null)}
         onSubmit={updateMatch}
       />
-
-      <Modal
-        open={createPlayerOpen}
-        onClose={() => setCreatePlayerOpen(false)}
-        title="Nieuwe speler toevoegen"
-        description="Registreer een teamgenoot voordat je een potje met hem of haar opslaat."
-        size="sm"
-      >
-        <PlayerForm
-          onCreate={handleCreatePlayer}
-          loading={savingPlayer}
-          showHeader={false}
-          className="flex flex-col gap-4"
-        />
-      </Modal>
 
       <Modal
         open={createMatchOpen}

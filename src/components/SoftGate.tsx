@@ -1,191 +1,556 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  createUserWithEmailAndPassword,
+  onIdTokenChanged,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+} from "firebase/auth";
+import { firebaseAuth } from "../lib/firebaseClient";
+import {
+  createPortalGroup,
+  getPortalSession,
+  joinPortalGroup,
+  type PortalSession,
+} from "../lib/api";
+import { setActiveGroupId, setAuthToken } from "../lib/sessionStore";
+import {
+  PortalProvider,
+  type PortalContextValue,
+} from "../context/PortalContext";
 
-const PINGPONG_CODE = (
-  import.meta.env.VITE_PINGPONG_CODE || "AXOFT"
-).toUpperCase();
-const PINGPONG_FLAG = "pp_access_granted";
+type AuthMode = "login" | "register";
+type GroupMode = "create" | "join";
 
-type GateView = "choice" | "download" | "pingpong";
+function buildFriendlyName(email: string) {
+  return email.split("@")[0]?.replace(/[._-]+/g, " ").trim() || "Nieuwe gebruiker";
+}
 
 export function SoftGate({ children }: { children: React.ReactNode }) {
-  const [pingpongGranted, setPingpongGranted] = useState(false);
-  const [value, setValue] = useState("");
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [groupMode, setGroupMode] = useState<GroupMode>("join");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [joinCode, setJoinCode] = useState("");
+  const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [portalSession, setPortalSession] = useState<PortalSession | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<GateView>("choice");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const [restoring, setRestoring] = useState(true);
+  const emailRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    try {
-      setPingpongGranted(sessionStorage.getItem(PINGPONG_FLAG) === "1");
-    } catch (e) {
-      // ignore sessionStorage errors
+  const activeGroupId = useMemo(() => {
+    if (!portalSession) {
+      return null;
     }
-  }, []);
 
-  const check = () => {
-    const normalized = value.trim().toUpperCase();
-    if (!normalized) {
-      setError("Vul een code in");
-      return;
+    return (
+      portalSession.activeGroupId ??
+      (selectedGroupId || localStorage.getItem("pp_active_group_id"))
+    );
+  }, [portalSession, selectedGroupId]);
+
+  const activeGroup = useMemo(() => {
+    if (!portalSession || !activeGroupId) {
+      return null;
     }
-    if (normalized === PINGPONG_CODE) {
-      try {
-        sessionStorage.setItem(PINGPONG_FLAG, "1");
-      } catch (e) {
-        // ignore
-      }
-      setPingpongGranted(true);
-      navigate("/", { replace: true });
-      setError(null);
-      setValue("");
+    return portalSession.groups.find((group) => group.id === activeGroupId) ?? null;
+  }, [activeGroupId, portalSession]);
+
+  const refreshSession = async () => {
+    const session = await getPortalSession();
+    setPortalSession(session);
+    const storedGroupId = localStorage.getItem("pp_active_group_id");
+    const nextGroupId =
+      (storedGroupId &&
+        session.groups.some((group) => group.id === storedGroupId) &&
+        storedGroupId) ||
+      session.activeGroupId ||
+      session.groups[0]?.id ||
+      "";
+    setSelectedGroupId(nextGroupId);
+    if (nextGroupId) {
+      setActiveGroupId(nextGroupId);
+      localStorage.setItem("pp_active_group_id", nextGroupId);
     } else {
-      setError("Onjuiste code");
+      setActiveGroupId(null);
     }
   };
 
   useEffect(() => {
-    if (view === "pingpong") {
-      inputRef.current?.focus();
-    }
-    setError(null);
-    setValue("");
-  }, [view]);
+    const unsubscribe = onIdTokenChanged(firebaseAuth, async (user) => {
+      setAuthReady(false);
+      setError(null);
+
+      try {
+        if (!user) {
+          setAuthToken(null);
+          setPortalSession(null);
+          setSelectedGroupId("");
+          setActiveGroupId(null);
+          localStorage.removeItem("pp_active_group_id");
+          setAuthReady(true);
+          return;
+        }
+
+        const token = await user.getIdToken();
+        setAuthToken(token);
+        await refreshSession();
+        if (!displayName && user.displayName) {
+          setDisplayName(user.displayName);
+        }
+      } catch (fetchError) {
+        setError(
+          fetchError instanceof Error
+            ? fetchError.message
+            : "Kon sessie niet laden."
+        );
+      } finally {
+        setAuthReady(true);
+        setRestoring(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
-    if (!pingpongGranted) {
-      setView("choice");
+    if (!authReady || authMode !== "login") {
+      return;
     }
-  }, [pingpongGranted]);
+    emailRef.current?.focus();
+  }, [authMode, authReady]);
 
-  if (pingpongGranted) {
-    return <>{children}</>;
+  const handleLogin = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await signInWithEmailAndPassword(firebaseAuth, authEmail.trim(), authPassword);
+    } catch (loginError) {
+      setError(
+        loginError instanceof Error ? loginError.message : "Inloggen mislukt."
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const userCredential = await createUserWithEmailAndPassword(
+        firebaseAuth,
+        authEmail.trim(),
+        authPassword
+      );
+      const nextDisplayName = displayName.trim() || buildFriendlyName(authEmail);
+      await updateProfile(userCredential.user, {
+        displayName: nextDisplayName,
+      });
+      await userCredential.user.getIdToken(true);
+    } catch (registerError) {
+      setError(
+        registerError instanceof Error
+          ? registerError.message
+          : "Account aanmaken mislukt."
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await sendPasswordResetEmail(firebaseAuth, authEmail.trim());
+    } catch (resetError) {
+      setError(
+        resetError instanceof Error
+          ? resetError.message
+          : "Wachtwoordherstel mislukt."
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCreateGroup = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await createPortalGroup({
+        name: groupName.trim(),
+        joinCode: joinCode.trim(),
+      });
+      setSelectedGroupId(result.group.id);
+      setActiveGroupId(result.group.id);
+      localStorage.setItem("pp_active_group_id", result.group.id);
+      await refreshSession();
+    } catch (createError) {
+      setError(
+        createError instanceof Error ? createError.message : "Groep maken mislukt."
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleJoinGroup = async () => {
+    if (!selectedGroupId) {
+      setError("Kies eerst een groep.");
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await joinPortalGroup({
+        groupId: selectedGroupId,
+        joinCode: joinCode.trim(),
+      });
+      setSelectedGroupId(result.group.id);
+      setActiveGroupId(result.group.id);
+      localStorage.setItem("pp_active_group_id", result.group.id);
+      await refreshSession();
+    } catch (joinError) {
+      setError(
+        joinError instanceof Error ? joinError.message : "Groep joinen mislukt."
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await signOut(firebaseAuth);
+      setAuthToken(null);
+      setPortalSession(null);
+      setSelectedGroupId("");
+      setActiveGroupId(null);
+      localStorage.removeItem("pp_active_group_id");
+    } catch (logoutError) {
+      setError(
+        logoutError instanceof Error ? logoutError.message : "Uitloggen mislukt."
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const ready = Boolean(authReady && portalSession && activeGroupId && activeGroup);
+
+  const contextValue: PortalContextValue = {
+    ready,
+    user: portalSession?.user ?? null,
+    groups: portalSession?.groups ?? [],
+    memberships: portalSession?.memberships ?? [],
+    activeGroupId: activeGroupId ?? null,
+    activeGroup,
+    logout: handleLogout,
+    refreshSession,
+    createGroup: async (payload) => {
+      await createPortalGroup(payload);
+      await refreshSession();
+    },
+    joinGroup: async (payload) => {
+      await joinPortalGroup(payload);
+      await refreshSession();
+    },
+    selectGroup: async (groupId) => {
+      setSelectedGroupId(groupId);
+      setActiveGroupId(groupId);
+      localStorage.setItem("pp_active_group_id", groupId);
+      await refreshSession();
+    },
+    session: portalSession,
+  };
+
+  if (restoring) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-100">
+        <p className="text-sm uppercase tracking-[0.3em] text-slate-400">
+          Sessie laden...
+        </p>
+      </div>
+    );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/95 p-4">
-      <div className="max-w-md w-full rounded-2xl border border-white/10 bg-slate-900/80 p-6 text-center">
-        {view === "choice" ? (
-          <>
-            <h2 className="text-lg font-semibold text-white">
-              Waar wil je naartoe?
-            </h2>
-            <p className="mt-2 text-sm text-slate-300">
-              Maak een keuze om verder te gaan.
-            </p>
-            <div className="mt-6 flex flex-col gap-3">
-              <button
-                type="button"
-                onClick={() => setView("download")}
-                className="inline-flex w-full items-center justify-center rounded-lg border border-axoft-400/60 bg-slate-800/70 px-4 py-3 text-sm font-semibold text-axoft-100 transition hover:border-axoft-300 hover:text-white"
-              >
-                Boozeboard app downloaden
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setView("pingpong");
-                  navigate("/", { replace: true });
-                }}
-                className="inline-flex w-full items-center justify-center rounded-lg bg-axoft-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-axoft-400"
-              >
-                Log in op het Ping Pong dashboard
-              </button>
-            </div>
-          </>
-        ) : null}
+    <PortalProvider value={contextValue}>
+      {ready ? (
+        children
+      ) : (
+        <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4">
+          <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-slate-900/90 p-6 text-slate-100 shadow-2xl">
+            {!portalSession ? (
+              <>
+                <p className="text-xs uppercase tracking-[0.5em] text-axoft-200">
+                  PingPong Scores
+                </p>
+                <h1 className="mt-3 text-2xl font-semibold text-white">
+                  Log in of maak een account
+                </h1>
+                <p className="mt-2 text-sm text-slate-300">
+                  Toegang tot je groep, je statistieken en je wedstrijden via Firebase Auth.
+                </p>
 
-        {view === "download" ? (
-          <>
-            <h2 className="text-lg font-semibold text-white">
-              Boozeboard app downloaden
-            </h2>
-            <p className="mt-2 text-sm text-slate-300">
-              Haal de app op via de juiste store.
-            </p>
-            <div className="mt-6 flex flex-col gap-3">
-              <a
-                href="https://apps.apple.com/nl/app/boozeboard/id6742513717"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex w-full items-center justify-center rounded-lg bg-white/90 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-white"
-              >
-                Download voor iOS
-              </a>
-              <a
-                href="https://play.google.com/store/apps/details?id=com.remyvk.biertracker&hl=nl"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex w-full items-center justify-center rounded-lg bg-emerald-500/90 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-500"
-              >
-                Download voor Android
-              </a>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setView("choice");
-                navigate("/", { replace: true });
-              }}
-              className="mt-6 inline-flex items-center justify-center text-sm font-medium text-axoft-100 hover:text-white"
-            >
-              Terug naar keuze
-            </button>
-          </>
-        ) : null}
+                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                  <div className="space-y-3 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode("login")}
+                      className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+                        authMode === "login"
+                          ? "bg-axoft-500 text-slate-950"
+                          : "border border-white/10 text-slate-200"
+                      }`}
+                    >
+                      Inloggen
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode("register")}
+                      className={`ml-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+                        authMode === "register"
+                          ? "bg-axoft-500 text-slate-950"
+                          : "border border-white/10 text-slate-200"
+                      }`}
+                    >
+                      Account maken
+                    </button>
 
-        {view === "pingpong" ? (
-          <>
-            <h2 className="text-lg font-semibold text-white">
-              Toegangscode vereist
-            </h2>
-            <p className="mt-2 text-sm text-slate-300">
-              Voer de toegangscode in om verder te gaan.
-            </p>
+                    <div className="space-y-3 pt-2">
+                      <input
+                        ref={emailRef}
+                        type="email"
+                        autoComplete="email"
+                        value={authEmail}
+                        onChange={(e) => setAuthEmail(e.target.value)}
+                        placeholder="E-mailadres"
+                        className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                      />
+                      <input
+                        type="password"
+                        autoComplete="current-password"
+                        value={authPassword}
+                        onChange={(e) => setAuthPassword(e.target.value)}
+                        placeholder="Wachtwoord"
+                        className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                      />
+                      {authMode === "register" ? (
+                        <input
+                          type="text"
+                          value={displayName}
+                          onChange={(e) => setDisplayName(e.target.value)}
+                          placeholder="Weergavenaam"
+                          className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                        />
+                      ) : null}
+                      {error ? (
+                        <p className="text-sm text-rose-300">{error}</p>
+                      ) : null}
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={authMode === "login" ? handleLogin : handleRegister}
+                          disabled={busy}
+                          className="rounded-xl bg-axoft-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-60"
+                        >
+                          {busy ? "Bezig..." : authMode === "login" ? "Inloggen" : "Account maken"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleResetPassword}
+                          disabled={busy}
+                          className="rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-slate-200 disabled:opacity-60"
+                        >
+                          Wachtwoord reset
+                        </button>
+                      </div>
+                    </div>
+                  </div>
 
-            <div className="mt-4">
-              <input
-                type="text"
-                aria-label="Toegangscode"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") check();
-                }}
-                ref={inputRef}
-                className="w-full rounded-lg border border-white/10 bg-slate-800 px-4 py-3 text-sm text-white focus:outline-none"
-              />
-            </div>
+                  <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4 text-sm text-slate-300">
+                    <p className="text-white font-semibold">Wat gebeurt hierna?</p>
+                    <ul className="mt-3 space-y-2">
+                      <li>Je logt in met Firebase Auth.</li>
+                      <li>Je kiest een bestaande groep of maakt een nieuwe.</li>
+                      <li>Je dashboard toont alleen de data van die groep.</li>
+                    </ul>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.5em] text-axoft-200">
+                      Groepen
+                    </p>
+                    <h2 className="mt-3 text-2xl font-semibold text-white">
+                      Kies of maak een groep
+                    </h2>
+                    <p className="mt-2 text-sm text-slate-300">
+                      Ingelogd als {portalSession.user.displayName ?? portalSession.user.email}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    disabled={busy}
+                    className="rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-slate-200 disabled:opacity-60"
+                  >
+                    Uitloggen
+                  </button>
+                </div>
 
-            {error ? (
-              <div className="mt-2 text-sm text-rose-400">{error}</div>
-            ) : null}
+                <div className="mt-6 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+                  <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setGroupMode("join")}
+                        className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+                          groupMode === "join"
+                            ? "bg-axoft-500 text-slate-950"
+                            : "border border-white/10 text-slate-200"
+                        }`}
+                      >
+                        Bestaande groep
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGroupMode("create")}
+                        className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+                          groupMode === "create"
+                            ? "bg-axoft-500 text-slate-950"
+                            : "border border-white/10 text-slate-200"
+                        }`}
+                      >
+                        Nieuwe groep
+                      </button>
+                    </div>
 
-            <div className="mt-4 flex justify-center gap-3">
-              <button
-                type="button"
-                onClick={check}
-                className="inline-flex items-center justify-center rounded-lg bg-axoft-500 px-4 py-2 text-sm font-semibold text-slate-950"
-              >
-                Bevestigen
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setView("choice");
-                navigate("/", { replace: true });
-              }}
-              className="mt-6 inline-flex items-center justify-center text-sm font-medium text-axoft-100 hover:text-white"
-            >
-              Terug naar keuze
-            </button>
-          </>
-        ) : null}
-      </div>
-    </div>
+                    {groupMode === "join" ? (
+                      <div className="mt-4 space-y-3">
+                        <label className="block text-xs uppercase tracking-[0.3em] text-slate-400">
+                          Kies groep
+                        </label>
+                        <select
+                          value={selectedGroupId}
+                          onChange={(e) => setSelectedGroupId(e.target.value)}
+                          className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                        >
+                          <option value="">Selecteer een groep</option>
+                          {portalSession.groups.map((group) => (
+                            <option key={group.id} value={group.id}>
+                              {group.name}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          value={joinCode}
+                          onChange={(e) => setJoinCode(e.target.value)}
+                          placeholder="Geheime code"
+                          className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleJoinGroup}
+                          disabled={busy}
+                          className="rounded-xl bg-axoft-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-60"
+                        >
+                          {busy ? "Bezig..." : "Groep joinen"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-4 space-y-3">
+                        <input
+                          type="text"
+                          value={groupName}
+                          onChange={(e) => setGroupName(e.target.value)}
+                          placeholder="Groepsnaam, bijvoorbeeld Axoft"
+                          className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                        />
+                        <input
+                          type="text"
+                          value={joinCode}
+                          onChange={(e) => setJoinCode(e.target.value)}
+                          placeholder="Geheime join-code"
+                          className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleCreateGroup}
+                          disabled={busy}
+                          className="rounded-xl bg-axoft-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-60"
+                        >
+                          {busy ? "Bezig..." : "Groep maken"}
+                        </button>
+                      </div>
+                    )}
+                    {error ? (
+                      <p className="mt-3 text-sm text-rose-300">{error}</p>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                      Bestaande groepen
+                    </p>
+                    <div className="mt-4 space-y-2">
+                      {portalSession.groups.length ? (
+                        portalSession.groups.map((group) => (
+                          <button
+                            key={group.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedGroupId(group.id);
+                              setGroupMode("join");
+                            }}
+                            className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition ${
+                              selectedGroupId === group.id
+                                ? "border-axoft-400 bg-axoft-500/10 text-white"
+                                : "border-white/10 text-slate-200 hover:border-axoft-400/60"
+                            }`}
+                          >
+                            <span>{group.name}</span>
+                            <span className="text-xs text-slate-400">
+                              {group.memberCount} leden
+                            </span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="text-sm text-slate-400">
+                          Er zijn nog geen groepen.
+                        </p>
+                      )}
+                    </div>
+                    {activeGroup ? (
+                      <p className="mt-4 text-sm text-slate-300">
+                        Actieve groep: <span className="text-white">{activeGroup.name}</span>
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </PortalProvider>
   );
 }
 
 export default SoftGate;
+

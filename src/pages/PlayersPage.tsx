@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { PlayerForm } from "../components/PlayerForm";
 import { PlayerEditForm } from "../components/PlayerEditForm";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Modal } from "../components/Modal";
@@ -32,15 +31,12 @@ export function PlayersPage() {
   const {
     players,
     matches,
-    savingPlayer,
     updatingPlayer,
     deletingPlayerId,
-    createPlayer,
     updatePlayer,
     deletePlayer
   } = useAppData();
 
-  const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<PlayerStats | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<PlayerStats | null>(null);
   const [expandedPlayerId, setExpandedPlayerId] = useState<number | null>(null);
@@ -69,11 +65,6 @@ export function PlayersPage() {
     return map;
   }, [matches, playerList]);
 
-  const handleCreate = async (name: string) => {
-    await createPlayer(name);
-    setCreateOpen(false);
-  };
-
   const handleEdit = async (name: string) => {
     if (!editing) {
       return;
@@ -96,19 +87,9 @@ export function PlayersPage() {
         <div>
           <h2 className="text-2xl font-semibold text-white">Team overzicht</h2>
           <p className="text-sm text-slate-400">
-            Voeg nieuwe collega's toe, hernoem bestaande spelers of verwijder accounts inclusief hun
+            Bekijk je groepsleden, hernoem bestaande spelers of verwijder accounts inclusief hun
             gespeelde potjes.
           </p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={() => setCreateOpen(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-axoft-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-axoft-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-950 focus:ring-axoft-500"
-          >
-            <span className="text-lg leading-none">+</span>
-            Nieuwe speler
-          </button>
         </div>
       </section>
 
@@ -258,25 +239,10 @@ export function PlayersPage() {
 
         {!playerList.length ? (
           <div className="glass-card col-span-full rounded-2xl border border-white/10 p-6 text-center text-sm text-slate-400">
-            Nog geen spelers toegevoegd. Gebruik de knop hierboven om het team te vullen.
+            Nog geen groepsleden toegevoegd.
           </div>
         ) : null}
       </section>
-
-      <Modal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="Nieuwe speler toevoegen"
-        description="Registreer een collega zodat we diens resultaten kunnen bijhouden."
-        size="sm"
-      >
-        <PlayerForm
-          onCreate={handleCreate}
-          loading={savingPlayer}
-          showHeader={false}
-          className="flex flex-col gap-4"
-        />
-      </Modal>
 
       <Modal
         open={Boolean(editing)}

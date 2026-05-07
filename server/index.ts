@@ -5,6 +5,7 @@ import express, {
   type Response,
 } from "express";
 import cors from "cors";
+import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
 import {
   createPlayerBadge,
   type BadgeId,
@@ -21,6 +22,7 @@ import {
 const app = express();
 const PORT = Number(process.env.PORT) || 4000;
 const TEAMS_WEBHOOK_URL = process.env.TEAMS_WEBHOOK_URL;
+const adminAuth = getAuth();
 
 type StoreErrorWithCode = { code: string };
 
@@ -35,12 +37,92 @@ const isStoreErrorWithCode = (
   );
 };
 
+type AuthedRequest = Request & {
+  firebaseUser?: DecodedIdToken;
+};
+
+const getBearerToken = (req: Request) => {
+  const header = req.headers.authorization;
+  if (!header?.startsWith("Bearer ")) {
+    return null;
+  }
+  return header.slice("Bearer ".length).trim() || null;
+};
+
+const requireAuth = async (
+  req: AuthedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const token = getBearerToken(req);
+    if (!token) {
+      return res.status(401).json({ message: "Inloggen vereist." });
+    }
+    req.firebaseUser = await adminAuth.verifyIdToken(token);
+    return next();
+  } catch (error) {
+    console.error("Auth verificatie mislukt", error);
+    return res.status(401).json({ message: "Inloggen vereist." });
+  }
+};
+
+const requireGroupId = (req: Request) => {
+  const groupId = req.headers["x-group-id"];
+  if (typeof groupId !== "string" || !groupId.trim()) {
+    return null;
+  }
+  return groupId.trim();
+};
+
+const getFirebaseUserInfo = (req: AuthedRequest) => {
+  const firebaseUser = req.firebaseUser;
+  if (!firebaseUser) {
+    return null;
+  }
+  return {
+    uid: firebaseUser.uid,
+    email:
+      typeof firebaseUser.email === "string" && firebaseUser.email.trim()
+        ? firebaseUser.email
+        : null,
+    displayName:
+      typeof firebaseUser.name === "string" && firebaseUser.name.trim()
+      ? firebaseUser.name
+        : null,
+  };
+};
+
+const getRequestContext = async (req: AuthedRequest, res: Response) => {
+  const user = getFirebaseUserInfo(req);
+  if (!user) {
+    res.status(401).json({ message: "Inloggen vereist." });
+    return null;
+  }
+
+  const groupId = requireGroupId(req);
+  if (!groupId) {
+    res.status(400).json({ message: "Groep ontbreekt." });
+    return null;
+  }
+
+  const isMember = await store.isMemberOfGroup(user.uid, groupId);
+  if (!isMember) {
+    res.status(403).json({ message: "Je hebt geen toegang tot deze groep." });
+    return null;
+  }
+
+  return { user, groupId };
+};
+
 app.use(cors());
 app.use(express.json());
+app.use("/api", requireAuth);
 
 const seasonCreationLocks = new Map<string, Promise<SeasonRecord>>();
 
-const getSeasonKey = (date: Date) => `${date.getFullYear()}-${date.getMonth()}`;
+const getSeasonKey = (groupId: string, date: Date) =>
+  `${groupId}:${date.getFullYear()}-${date.getMonth()}`;
 
 const getSeasonBoundaries = (date: Date) => {
   const start = new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
@@ -66,8 +148,8 @@ async function deduplicateSeasons() {
   return store.deleteDuplicateSeasons();
 }
 
-async function getOrCreateSeasonForDate(date: Date) {
-  const key = getSeasonKey(date);
+async function getOrCreateSeasonForDate(groupId: string, date: Date) {
+  const key = getSeasonKey(groupId, date);
   const pending = seasonCreationLocks.get(key);
   if (pending) {
     return pending;
@@ -75,14 +157,14 @@ async function getOrCreateSeasonForDate(date: Date) {
 
   const operation = (async (): Promise<SeasonRecord> => {
     const { start, end } = getSeasonBoundaries(date);
-    const existing = await store.findSeasonForDate(date);
+    const existing = await store.findSeasonForDate(groupId, date);
 
     if (existing) {
       return existing;
     }
 
     try {
-      return await store.createSeason({
+      return await store.createSeason(groupId, {
         name: `Seizoen ${buildSeasonName(date)}`,
         startDate: start,
         endDate: end,
@@ -90,6 +172,7 @@ async function getOrCreateSeasonForDate(date: Date) {
     } catch (error) {
       if (isStoreErrorWithCode(error) && error.code === "P2002") {
         const createdByOtherRequest = await store.findSeasonByBoundaries(
+          groupId,
           start,
           end
         );
@@ -307,12 +390,12 @@ const buildPlayerStats = (
   };
 };
 
-async function fetchPlayersWithRelations(playerId?: number) {
-  return store.fetchPlayersWithRelations(playerId);
+async function fetchPlayersWithRelations(groupId: string, playerId?: number) {
+  return store.fetchPlayersWithRelations(groupId, playerId);
 }
 
-const getChampionCounts = async () => {
-  return store.getChampionCounts();
+const getChampionCounts = async (groupId: string) => {
+  return store.getChampionCounts(groupId);
 };
 
 type SeasonStanding = {
@@ -452,19 +535,24 @@ const calculateSeasonStandings = (
 
 const ensurePastSeasonChampions = async () => {
   const now = new Date();
-  const pastSeasons = await store.listPastSeasonsWithMatches(now);
+  const groups = await store.listGroups();
 
   await Promise.all(
-    pastSeasons.map(async (season) => {
-      const standings = calculateSeasonStandings(season.matches);
-      if (!standings.length) {
-        return;
-      }
-      const championId = standings[0].player.id;
-      if (season.championId === championId) {
-        return;
-      }
-      await store.updateSeason(season.id, { championId });
+    groups.map(async (group) => {
+      const pastSeasons = await store.listPastSeasonsWithMatches(group.id, now);
+      await Promise.all(
+        pastSeasons.map(async (season) => {
+          const standings = calculateSeasonStandings(season.matches);
+          if (!standings.length) {
+            return;
+          }
+          const championId = standings[0].player.id;
+          if (season.championId === championId) {
+            return;
+          }
+          await store.updateSeason(group.id, season.id, { championId });
+        })
+      );
     })
   );
 };
@@ -481,13 +569,13 @@ type CurrentSeasonTopEntry = {
   pointDifferential: number;
 };
 
-const getCurrentSeasonLeaderboardSnapshot = async () => {
-  const currentSeason = await getOrCreateSeasonForDate(new Date());
+const getCurrentSeasonLeaderboardSnapshot = async (groupId: string) => {
+  const currentSeason = await getOrCreateSeasonForDate(groupId, new Date());
   const seasonMatches = (
     await Promise.all(
-      (await store.listMatches())
+      (await store.listMatches(groupId))
         .filter((match) => match.seasonId === currentSeason.id)
-        .map((match) => store.hydrateMatch(match))
+        .map((match) => store.hydrateMatch(groupId, match))
     )
   ).sort((a, b) => a.playedAt.getTime() - b.playedAt.getTime());
 
@@ -787,8 +875,9 @@ const sendTeamsCard = async (cardContent: unknown) => {
 
 const notifyTeamsMatchCreated = async (match: MatchWithRelations) => {
   try {
-    const { currentSeason, topFive } =
-      await getCurrentSeasonLeaderboardSnapshot();
+    const { currentSeason, topFive } = await getCurrentSeasonLeaderboardSnapshot(
+      match.groupId
+    );
     const body = buildTeamsMatchCardBody({
       title: "Nieuwe wedstrijd geregistreerd",
       subtitle: "Scorekaart geupdate en klassement ververst.",
@@ -841,8 +930,9 @@ const notifyTeamsPlayerChange = async (payload: {
 
 const notifyTeamsMatchUpdated = async (match: MatchWithRelations) => {
   try {
-    const { currentSeason, topFive } =
-      await getCurrentSeasonLeaderboardSnapshot();
+    const { currentSeason, topFive } = await getCurrentSeasonLeaderboardSnapshot(
+      match.groupId
+    );
     const body = buildTeamsMatchCardBody({
       title: "Wedstrijd bijgewerkt",
       subtitle: "Resultaat aangepast en klassement opnieuw berekend.",
@@ -859,8 +949,9 @@ const notifyTeamsMatchUpdated = async (match: MatchWithRelations) => {
 
 const notifyTeamsMatchDeleted = async (match: MatchWithRelations) => {
   try {
-    const { currentSeason, topFive } =
-      await getCurrentSeasonLeaderboardSnapshot();
+    const { currentSeason, topFive } = await getCurrentSeasonLeaderboardSnapshot(
+      match.groupId
+    );
     const body = buildTeamsMatchCardBody({
       title: "Wedstrijd verwijderd",
       subtitle: "Resultaat teruggedraaid en huidig seizoen opnieuw gerankt.",
@@ -890,6 +981,7 @@ const serializeSeason = (
   season:
     | {
         id: number;
+        groupId?: string;
         name: string;
         startDate: Date;
         endDate: Date;
@@ -935,6 +1027,40 @@ const serializeDoublesMatch = (match: DoublesMatchWithRelations) => ({
   season: serializeSeason(match.season),
   createdAt: match.createdAt.toISOString(),
   updatedAt: match.updatedAt.toISOString(),
+});
+
+const serializePortalUser = (user: {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+}) => ({
+  uid: user.uid,
+  email: user.email,
+  displayName: user.displayName,
+});
+
+const serializePortalGroup = (group: {
+  id: string;
+  name: string;
+  ownerUid: string;
+  createdAt: Date;
+  updatedAt: Date;
+}) => ({
+  id: group.id,
+  name: group.name,
+  ownerUid: group.ownerUid,
+  createdAt: group.createdAt.toISOString(),
+  updatedAt: group.updatedAt.toISOString(),
+});
+
+const serializePortalMembership = (membership: {
+  groupId: string;
+  role: "owner" | "member";
+  joinedAt: Date;
+}) => ({
+  groupId: membership.groupId,
+  role: membership.role,
+  joinedAt: membership.joinedAt.toISOString(),
 });
 
 const validateDoublesPlayerIds = (playerIds: number[]) => {
@@ -1032,17 +1158,17 @@ type MatchRecommendation = {
   };
 };
 
-const buildMatchRecommendations = async () => {
+const buildMatchRecommendations = async (groupId: string) => {
   const now = new Date();
   const [currentSeason, players, matches, championCounts] = await Promise.all([
-    getOrCreateSeasonForDate(now),
-    fetchPlayersWithRelations(),
+    getOrCreateSeasonForDate(groupId, now),
+    fetchPlayersWithRelations(groupId),
     Promise.all(
-      (await store.listMatches())
+      (await store.listMatches(groupId))
         .sort((a, b) => b.playedAt.getTime() - a.playedAt.getTime())
-        .map((match) => store.hydrateMatch(match))
+        .map((match) => store.hydrateMatch(groupId, match))
     ),
-    getChampionCounts(),
+    getChampionCounts(groupId),
   ]);
 
   const playerStats = players.map((player) =>
@@ -1261,13 +1387,131 @@ app.get("/healthz", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/players", async (_req, res, next) => {
+app.get("/api/portal/session", async (req, res, next) => {
   try {
+    const user = getFirebaseUserInfo(req as AuthedRequest);
+    if (!user) {
+      return res.status(401).json({ message: "Inloggen vereist." });
+    }
+
+    const activeGroupId = requireGroupId(req);
+    const session = await store.getPortalSession(user, activeGroupId);
+    res.json({
+      user: serializePortalUser(session.user),
+      groups: session.groups.map((group) => ({
+        ...serializePortalGroup(group),
+        memberCount: group.memberCount,
+      })),
+      memberships: session.memberships.map(serializePortalMembership),
+      activeGroupId: session.activeGroupId,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/portal/groups", async (req, res, next) => {
+  try {
+    const user = getFirebaseUserInfo(req as AuthedRequest);
+    if (!user) {
+      return res.status(401).json({ message: "Inloggen vereist." });
+    }
+
+    const [groups, memberships] = await Promise.all([
+      store.listGroups(),
+      store.listMemberships(),
+    ]);
+    res.json(
+      groups.map((group) => ({
+        ...serializePortalGroup(group),
+        memberCount: memberships.filter((membership) => membership.groupId === group.id).length,
+      }))
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/portal/groups", async (req, res, next) => {
+  try {
+    const user = getFirebaseUserInfo(req as AuthedRequest);
+    if (!user) {
+      return res.status(401).json({ message: "Inloggen vereist." });
+    }
+
+    const { name, joinCode } = req.body ?? {};
+    if (typeof name !== "string" || !name.trim()) {
+      return res.status(400).json({ message: "Groepsnaam is verplicht." });
+    }
+    if (typeof joinCode !== "string" || !joinCode.trim()) {
+      return res.status(400).json({ message: "Geheime code is verplicht." });
+    }
+
+    const result = await store.createGroup({
+      ownerUid: user.uid,
+      name,
+      joinCode,
+      ownerEmail: user.email,
+      ownerDisplayName: user.displayName,
+    });
+
+    res.status(201).json({
+      group: {
+        ...serializePortalGroup(result.group),
+        memberCount: 1,
+      },
+      membership: serializePortalMembership(result.membership),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/portal/groups/:groupId/join", async (req, res, next) => {
+  try {
+    const user = getFirebaseUserInfo(req as AuthedRequest);
+    if (!user) {
+      return res.status(401).json({ message: "Inloggen vereist." });
+    }
+
+    const { groupId } = req.params;
+    const { joinCode } = req.body ?? {};
+    if (typeof joinCode !== "string" || !joinCode.trim()) {
+      return res.status(400).json({ message: "Geheime code is verplicht." });
+    }
+
+    const result = await store.joinGroup({
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName,
+      groupId,
+      joinCode,
+    });
+
+    const members = await store.listMemberships();
+    res.status(200).json({
+      group: {
+        ...serializePortalGroup(result.group),
+        memberCount: members.filter((membership) => membership.groupId === groupId).length,
+      },
+      membership: serializePortalMembership(result.membership),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/players", async (req, res, next) => {
+  try {
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
     await ensurePastSeasonChampions();
     const [players, currentSeason, championCounts] = await Promise.all([
-      fetchPlayersWithRelations(),
-      getOrCreateSeasonForDate(new Date()),
-      getChampionCounts(),
+      fetchPlayersWithRelations(context.groupId),
+      getOrCreateSeasonForDate(context.groupId, new Date()),
+      getChampionCounts(context.groupId),
     ]);
     res.json(
       players.map((player) =>
@@ -1287,13 +1531,18 @@ app.post("/api/players", async (req, res, next) => {
   }
 
   try {
-    const player = await store.createPlayer(name.trim());
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
+
+    const player = await store.createPlayer(context.groupId, name.trim());
 
     const [playerWithRelations, currentSeason, championCounts] =
       await Promise.all([
-        fetchPlayersWithRelations(player.id),
-        getOrCreateSeasonForDate(new Date()),
-        getChampionCounts(),
+        fetchPlayersWithRelations(context.groupId, player.id),
+        getOrCreateSeasonForDate(context.groupId, new Date()),
+        getChampionCounts(context.groupId),
       ]);
 
     const statsSource = playerWithRelations[0];
@@ -1335,21 +1584,26 @@ app.patch("/api/players/:id", async (req, res, next) => {
   }
 
   try {
-    const existingPlayer = await store.getPlayer(playerId);
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
+
+    const existingPlayer = await store.getPlayer(context.groupId, playerId);
 
     if (!existingPlayer) {
       return res.status(404).json({ message: "Speler niet gevonden." });
     }
 
-    const updatedPlayer = await store.updatePlayer(playerId, {
+    const updatedPlayer = await store.updatePlayer(context.groupId, playerId, {
       name: name.trim(),
     });
 
     const [playerWithRelations, currentSeason, championCounts] =
       await Promise.all([
-        fetchPlayersWithRelations(playerId),
-        getOrCreateSeasonForDate(new Date()),
-        getChampionCounts(),
+        fetchPlayersWithRelations(context.groupId, playerId),
+        getOrCreateSeasonForDate(context.groupId, new Date()),
+        getChampionCounts(context.groupId),
       ]);
 
     const statsSource = playerWithRelations[0];
@@ -1389,13 +1643,18 @@ app.delete("/api/players/:id", async (req, res, next) => {
   }
 
   try {
-    const player = await store.getPlayer(playerId);
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
+
+    const player = await store.getPlayer(context.groupId, playerId);
 
     if (!player) {
       return res.status(404).json({ message: "Speler niet gevonden." });
     }
 
-    await store.deletePlayer(playerId);
+    await store.deletePlayer(context.groupId, playerId);
 
     notifyTeamsPlayerChange({ type: "deleted", name: player.name }).catch(
       (error) => {
@@ -1409,11 +1668,17 @@ app.delete("/api/players/:id", async (req, res, next) => {
   }
 });
 
-app.get("/api/matches", async (_req, res, next) => {
+app.get("/api/matches", async (req, res, next) => {
   try {
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
     const matches = (
       await Promise.all(
-        (await store.listMatches()).map((match) => store.hydrateMatch(match))
+        (await store.listMatches(context.groupId)).map((match) =>
+          store.hydrateMatch(context.groupId, match)
+        )
       )
     ).sort((a, b) => b.playedAt.getTime() - a.playedAt.getTime());
 
@@ -1422,9 +1687,10 @@ app.get("/api/matches", async (_req, res, next) => {
         if (match.seasonId) {
           return match;
         }
-        const season = await getOrCreateSeasonForDate(match.playedAt);
+        const season = await getOrCreateSeasonForDate(context.groupId, match.playedAt);
         return store.hydrateMatch(
-          await store.updateMatch(match.id, { seasonId: season.id })
+          context.groupId,
+          await store.updateMatch(context.groupId, match.id, { seasonId: season.id })
         );
       })
     );
@@ -1483,9 +1749,14 @@ app.post("/api/matches", async (req, res, next) => {
   }
 
   try {
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
+
     const [playerOne, playerTwo] = await Promise.all([
-      store.getPlayer(playerOneId),
-      store.getPlayer(playerTwoId),
+      store.getPlayer(context.groupId, playerOneId),
+      store.getPlayer(context.groupId, playerTwoId),
     ]);
 
     if (!playerOne || !playerTwo) {
@@ -1493,18 +1764,20 @@ app.post("/api/matches", async (req, res, next) => {
     }
 
     const playedDate = playedAt ? new Date(playedAt) : new Date();
-    const season = await getOrCreateSeasonForDate(playedDate);
+    const season = await getOrCreateSeasonForDate(context.groupId, playedDate);
     const winnerId =
       playerOnePoints > playerTwoPoints ? playerOneId : playerTwoId;
 
     const match = await store.hydrateMatch(
-      await store.createMatch({
+      context.groupId,
+      await store.createMatch(context.groupId, {
         playerOneId,
         playerTwoId,
         playerOnePoints,
         playerTwoPoints,
         winnerId,
         playedAt: playedDate,
+        groupId: context.groupId,
         seasonId: season.id,
       })
     );
@@ -1534,7 +1807,12 @@ app.patch("/api/matches/:id", async (req, res, next) => {
   } = req.body ?? {};
 
   try {
-    const existing = await store.getMatch(matchId);
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
+
+    const existing = await store.getMatch(context.groupId, matchId);
 
     if (!existing) {
       return res.status(404).json({ message: "Wedstrijd niet gevonden." });
@@ -1572,8 +1850,8 @@ app.patch("/api/matches/:id", async (req, res, next) => {
     }
 
     const [playerOne, playerTwo] = await Promise.all([
-      store.getPlayer(nextPlayerOneId),
-      store.getPlayer(nextPlayerTwoId),
+      store.getPlayer(context.groupId, nextPlayerOneId),
+      store.getPlayer(context.groupId, nextPlayerTwoId),
     ]);
 
     if (!playerOne || !playerTwo) {
@@ -1581,14 +1859,15 @@ app.patch("/api/matches/:id", async (req, res, next) => {
     }
 
     const nextPlayedAt = playedAt ? new Date(playedAt) : existing.playedAt;
-    const season = await getOrCreateSeasonForDate(nextPlayedAt);
+    const season = await getOrCreateSeasonForDate(context.groupId, nextPlayedAt);
     const winnerId =
       nextPlayerOnePoints > nextPlayerTwoPoints
         ? nextPlayerOneId
         : nextPlayerTwoId;
 
     const updated = await store.hydrateMatch(
-      await store.updateMatch(matchId, {
+      context.groupId,
+      await store.updateMatch(context.groupId, matchId, {
         playerOneId: nextPlayerOneId,
         playerTwoId: nextPlayerTwoId,
         playerOnePoints: nextPlayerOnePoints,
@@ -1616,14 +1895,19 @@ app.delete("/api/matches/:id", async (req, res, next) => {
   }
 
   try {
-    const existingMatch = await store.getMatch(matchId);
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
+
+    const existingMatch = await store.getMatch(context.groupId, matchId);
 
     if (!existingMatch) {
       return res.status(404).json({ message: "Wedstrijd niet gevonden." });
     }
 
-    const existing = await store.hydrateMatch(existingMatch);
-    await store.deleteMatch(matchId);
+    const existing = await store.hydrateMatch(context.groupId, existingMatch);
+    await store.deleteMatch(context.groupId, matchId);
 
     notifyTeamsMatchDeleted(existing).catch((error) => {
       console.error("Teams notificatie mislukt", error);
@@ -1638,12 +1922,16 @@ app.delete("/api/matches/:id", async (req, res, next) => {
   }
 });
 
-app.get("/api/doubles-matches", async (_req, res, next) => {
+app.get("/api/doubles-matches", async (req, res, next) => {
   try {
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
     const matches = (
       await Promise.all(
-        (await store.listDoublesMatches()).map((match) =>
-          store.hydrateDoublesMatch(match)
+        (await store.listDoublesMatches(context.groupId)).map((match) =>
+          store.hydrateDoublesMatch(context.groupId, match)
         )
       )
     ).sort((a, b) => b.playedAt.getTime() - a.playedAt.getTime());
@@ -1654,9 +1942,10 @@ app.get("/api/doubles-matches", async (_req, res, next) => {
           return match;
         }
 
-        const season = await getOrCreateSeasonForDate(match.playedAt);
+        const season = await getOrCreateSeasonForDate(context.groupId, match.playedAt);
         return store.hydrateDoublesMatch(
-          await store.updateDoublesMatch(match.id, { seasonId: season.id })
+          context.groupId,
+          await store.updateDoublesMatch(context.groupId, match.id, { seasonId: season.id })
         );
       })
     );
@@ -1710,18 +1999,24 @@ app.post("/api/doubles-matches", async (req, res, next) => {
   }
 
   try {
-    const players = await store.getPlayersByIds(playerIds);
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
+
+    const players = await store.getPlayersByIds(context.groupId, playerIds);
 
     if (players.length !== 4) {
       return res.status(404).json({ message: "Een of meer spelers bestaan niet." });
     }
 
     const playedDate = playedAt ? new Date(playedAt) : new Date();
-    const season = await getOrCreateSeasonForDate(playedDate);
+    const season = await getOrCreateSeasonForDate(context.groupId, playedDate);
     const winnerTeam = teamOnePoints > teamTwoPoints ? 1 : 2;
 
     const match = await store.hydrateDoublesMatch(
-      await store.createDoublesMatch({
+      context.groupId,
+      await store.createDoublesMatch(context.groupId, {
         teamOnePlayerAId,
         teamOnePlayerBId,
         teamTwoPlayerAId,
@@ -1730,6 +2025,7 @@ app.post("/api/doubles-matches", async (req, res, next) => {
         teamTwoPoints,
         winnerTeam,
         playedAt: playedDate,
+        groupId: context.groupId,
         seasonId: season.id,
       })
     );
@@ -1757,7 +2053,12 @@ app.patch("/api/doubles-matches/:id", async (req, res, next) => {
   } = req.body ?? {};
 
   try {
-    const existing = await store.getDoublesMatch(matchId);
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
+
+    const existing = await store.getDoublesMatch(context.groupId, matchId);
 
     if (!existing) {
       return res.status(404).json({ message: "Wedstrijd niet gevonden." });
@@ -1812,18 +2113,19 @@ app.patch("/api/doubles-matches/:id", async (req, res, next) => {
         .json({ message: "Scores kunnen niet negatief zijn." });
     }
 
-    const players = await store.getPlayersByIds(playerIds);
+    const players = await store.getPlayersByIds(context.groupId, playerIds);
 
     if (players.length !== 4) {
       return res.status(404).json({ message: "Een of meer spelers bestaan niet." });
     }
 
     const nextPlayedAt = playedAt ? new Date(playedAt) : existing.playedAt;
-    const season = await getOrCreateSeasonForDate(nextPlayedAt);
+    const season = await getOrCreateSeasonForDate(context.groupId, nextPlayedAt);
     const winnerTeam = nextTeamOnePoints > nextTeamTwoPoints ? 1 : 2;
 
     const updated = await store.hydrateDoublesMatch(
-      await store.updateDoublesMatch(matchId, {
+      context.groupId,
+      await store.updateDoublesMatch(context.groupId, matchId, {
         teamOnePlayerAId: nextTeamOnePlayerAId,
         teamOnePlayerBId: nextTeamOnePlayerBId,
         teamTwoPlayerAId: nextTeamTwoPlayerAId,
@@ -1849,13 +2151,18 @@ app.delete("/api/doubles-matches/:id", async (req, res, next) => {
   }
 
   try {
-    const existing = await store.getDoublesMatch(matchId);
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
+
+    const existing = await store.getDoublesMatch(context.groupId, matchId);
 
     if (!existing) {
       return res.status(404).json({ message: "Wedstrijd niet gevonden." });
     }
 
-    await store.deleteDoublesMatch(matchId);
+    await store.deleteDoublesMatch(context.groupId, matchId);
 
     res.status(204).end();
   } catch (error) {
@@ -1866,12 +2173,16 @@ app.delete("/api/doubles-matches/:id", async (req, res, next) => {
   }
 });
 
-app.get("/api/seasons", async (_req, res, next) => {
+app.get("/api/seasons", async (req, res, next) => {
   try {
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
     await ensurePastSeasonChampions();
     const [seasons, currentSeason] = await Promise.all([
-      store.listSeasonSummaries(),
-      getOrCreateSeasonForDate(new Date()),
+      store.listSeasonSummaries(context.groupId),
+      getOrCreateSeasonForDate(context.groupId, new Date()),
     ]);
 
     const now = new Date();
@@ -1887,7 +2198,7 @@ app.get("/api/seasons", async (_req, res, next) => {
           const championId = standings[0].player.id;
           championPayload = standings[0].player;
           if (season.championId == null || season.championId !== championId) {
-            await store.updateSeason(season.id, { championId });
+            await store.updateSeason(context.groupId, season.id, { championId });
           }
         }
 
@@ -1923,9 +2234,13 @@ app.get("/api/seasons", async (_req, res, next) => {
   }
 });
 
-app.get("/api/recommendations", async (_req, res, next) => {
+app.get("/api/recommendations", async (req, res, next) => {
   try {
-    const result = await buildMatchRecommendations();
+    const context = await getRequestContext(req as AuthedRequest, res);
+    if (!context) {
+      return;
+    }
+    const result = await buildMatchRecommendations(context.groupId);
     res.json({
       generatedAt: new Date().toISOString(),
       season: result.season,

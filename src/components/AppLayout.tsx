@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAppData } from "../context/AppDataContext";
+import { usePortal } from "../context/PortalContext";
 
 const primaryNavLinks = [
   { to: "/", label: "Dashboard" },
@@ -18,6 +19,7 @@ const secondaryNavLinks = [
 
 export function AppLayout() {
   const { players, matches, doublesMatches, error, loading } = useAppData();
+  const { activeGroup } = usePortal();
   const totalMatches = matches.length + doublesMatches.length;
   const [moreOpen, setMoreOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
@@ -55,7 +57,7 @@ export function AppLayout() {
             </h1>
             <p className="max-w-xl text-sm text-slate-300">
               Registreer potjes, analyseer statistieken en ontdek wie binnen
-              Axoft de ultieme pingpongkampioen is.
+              {activeGroup ? ` ${activeGroup.name}` : " je groep"} de ultieme pingpongkampioen is.
             </p>
           </div>
           <div className="flex flex-col gap-4 md:min-w-[220px]">

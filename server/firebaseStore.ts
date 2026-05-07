@@ -12,9 +12,12 @@ import {
   type Firestore,
   type QueryDocumentSnapshot,
 } from "firebase-admin/firestore";
+import { randomUUID } from "node:crypto";
 
 export type PlayerRecord = {
   id: number;
+  groupId: string;
+  uid: string | null;
   name: string;
   normalizedName?: string;
   createdAt: Date;
@@ -23,6 +26,7 @@ export type PlayerRecord = {
 
 export type SeasonRecord = {
   id: number;
+  groupId: string;
   name: string;
   startDate: Date;
   endDate: Date;
@@ -33,6 +37,7 @@ export type SeasonRecord = {
 
 export type MatchRecord = {
   id: number;
+  groupId: string;
   playerOneId: number;
   playerTwoId: number;
   winnerId: number;
@@ -46,6 +51,7 @@ export type MatchRecord = {
 
 export type DoublesMatchRecord = {
   id: number;
+  groupId: string;
   teamOnePlayerAId: number;
   teamOnePlayerBId: number;
   teamTwoPlayerAId: number;
@@ -83,6 +89,31 @@ export type DoublesMatchWithRelations = DoublesMatchRecord & {
 export type SeasonWithRelations = SeasonRecord & {
   matches: MatchWithRelations[];
   champion: PlayerRecord | null;
+};
+
+export type PortalUserRecord = {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type PortalGroupRecord = {
+  id: string;
+  name: string;
+  ownerUid: string;
+  joinCode: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type PortalMembershipRecord = {
+  id: string;
+  uid: string;
+  groupId: string;
+  role: "owner" | "member";
+  joinedAt: Date;
 };
 
 export class FirebaseUniqueConstraintError extends Error {
@@ -149,6 +180,8 @@ const fromPlayerDoc = (doc: QueryDocumentSnapshot<DocumentData>): PlayerRecord =
   const data = doc.data();
   return {
     id: data.id,
+    groupId: data.groupId,
+    uid: data.uid ?? null,
     name: data.name,
     normalizedName: data.normalizedName,
     createdAt: toDate(data.createdAt),
@@ -160,6 +193,7 @@ const fromSeasonDoc = (doc: QueryDocumentSnapshot<DocumentData>): SeasonRecord =
   const data = doc.data();
   return {
     id: data.id,
+    groupId: data.groupId,
     name: data.name,
     startDate: toDate(data.startDate),
     endDate: toDate(data.endDate),
@@ -173,6 +207,7 @@ const fromMatchDoc = (doc: QueryDocumentSnapshot<DocumentData>): MatchRecord => 
   const data = doc.data();
   return {
     id: data.id,
+    groupId: data.groupId,
     playerOneId: data.playerOneId,
     playerTwoId: data.playerTwoId,
     winnerId: data.winnerId,
@@ -191,6 +226,7 @@ const fromDoublesMatchDoc = (
   const data = doc.data();
   return {
     id: data.id,
+    groupId: data.groupId,
     teamOnePlayerAId: data.teamOnePlayerAId,
     teamOnePlayerBId: data.teamOnePlayerBId,
     teamTwoPlayerAId: data.teamTwoPlayerAId,
@@ -202,6 +238,46 @@ const fromDoublesMatchDoc = (
     seasonId: data.seasonId ?? null,
     createdAt: toDate(data.createdAt),
     updatedAt: toDate(data.updatedAt),
+  };
+};
+
+const fromPortalUserDoc = (
+  doc: QueryDocumentSnapshot<DocumentData>
+): PortalUserRecord => {
+  const data = doc.data();
+  return {
+    uid: data.uid,
+    email: data.email ?? null,
+    displayName: data.displayName ?? null,
+    createdAt: toDate(data.createdAt),
+    updatedAt: toDate(data.updatedAt),
+  };
+};
+
+const fromPortalGroupDoc = (
+  doc: QueryDocumentSnapshot<DocumentData>
+): PortalGroupRecord => {
+  const data = doc.data();
+  return {
+    id: data.id,
+    name: data.name,
+    ownerUid: data.ownerUid,
+    joinCode: data.joinCode,
+    createdAt: toDate(data.createdAt),
+    updatedAt: toDate(data.updatedAt),
+  };
+};
+
+const fromPortalMembershipDoc = (
+  doc: QueryDocumentSnapshot<DocumentData>
+): PortalMembershipRecord => {
+  const data = doc.data();
+  return {
+    id: data.id,
+    uid: data.uid,
+    groupId: data.groupId,
+    role: data.role,
+    joinedAt: toDate(data.joinedAt),
   };
 };
 
@@ -224,35 +300,257 @@ class FirebaseStore {
     return this.db.collection(name);
   }
 
-  private async nextId(name: string) {
-    const ref = this.collection("metadata").doc(`counter-${name}`);
+  private groupRef(groupId: string) {
+    return this.collection("groups").doc(groupId);
+  }
+
+  private groupCollection(groupId: string, name: string) {
+    return this.groupRef(groupId).collection(name);
+  }
+
+  private portalCollection(name: string) {
+    return this.collection(name);
+  }
+
+  private async nextId(groupId: string, name: string) {
+    const ref = this.groupRef(groupId).collection("_meta").doc("counters");
     return this.db.runTransaction(async (transaction) => {
       const snapshot = await transaction.get(ref);
-      const next = ((snapshot.data()?.value as number | undefined) ?? 0) + 1;
-      transaction.set(ref, { value: next }, { merge: true });
+      const counters = (snapshot.data()?.counters as Record<string, number> | undefined) ?? {};
+      const next = (counters[name] ?? 0) + 1;
+      transaction.set(ref, { counters: { ...counters, [name]: next } }, { merge: true });
       return next;
     });
   }
 
-  async listPlayers() {
-    const snapshot = await this.collection("players").get();
+  async ensurePlayerForUser(
+    groupId: string,
+    uid: string,
+    displayName: string | null
+  ) {
+    const existing = await this.groupCollection(groupId, "players")
+      .where("uid", "==", uid)
+      .limit(1)
+      .get();
+    if (!existing.empty) {
+      return fromPlayerDoc(existing.docs[0] as QueryDocumentSnapshot<DocumentData>);
+    }
+
+    const id = await this.nextId(groupId, "players");
+    const now = new Date();
+    const name = (displayName ?? `Speler ${id}`).trim();
+    const player: PlayerRecord = {
+      id,
+      groupId,
+      uid,
+      name,
+      normalizedName: normalizeName(name),
+      createdAt: now,
+      updatedAt: now,
+    };
+    await this.groupCollection(groupId, "players").doc(String(id)).set(player);
+    return player;
+  }
+
+  async upsertUser(user: {
+    uid: string;
+    email: string | null;
+    displayName: string | null;
+  }) {
+    const ref = this.portalCollection("users").doc(user.uid);
+    const snapshot = await ref.get();
+    const now = new Date();
+    const existing = snapshot.exists
+      ? fromPortalUserDoc(snapshot as QueryDocumentSnapshot<DocumentData>)
+      : null;
+    const next: PortalUserRecord = {
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName ?? existing?.displayName ?? null,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    await ref.set(next);
+    return next;
+  }
+
+  async listGroups() {
+    const snapshot = await this.portalCollection("groups").get();
+    return snapshot.docs.map(fromPortalGroupDoc);
+  }
+
+  async getGroup(groupId: string) {
+    const snapshot = await this.portalCollection("groups").doc(groupId).get();
+    return snapshot.exists
+      ? fromPortalGroupDoc(snapshot as QueryDocumentSnapshot<DocumentData>)
+      : null;
+  }
+
+  async listMembershipsForUser(uid: string) {
+    const snapshot = await this.portalCollection("memberships")
+      .where("uid", "==", uid)
+      .get();
+    return snapshot.docs.map(fromPortalMembershipDoc);
+  }
+
+  async listMemberships() {
+    const snapshot = await this.portalCollection("memberships").get();
+    return snapshot.docs.map(fromPortalMembershipDoc);
+  }
+
+  async isMemberOfGroup(uid: string, groupId: string) {
+    const snapshot = await this.portalCollection("memberships")
+      .where("uid", "==", uid)
+      .where("groupId", "==", groupId)
+      .limit(1)
+      .get();
+    return !snapshot.empty;
+  }
+
+  async createGroup(payload: {
+    ownerUid: string;
+    name: string;
+    joinCode: string;
+    ownerEmail: string | null;
+    ownerDisplayName: string | null;
+  }) {
+    const id = randomUUID();
+    const now = new Date();
+    const group: PortalGroupRecord = {
+      id,
+      name: payload.name.trim(),
+      ownerUid: payload.ownerUid,
+      joinCode: payload.joinCode.trim(),
+      createdAt: now,
+      updatedAt: now,
+    };
+    const membership: PortalMembershipRecord = {
+      id: `${id}:${payload.ownerUid}`,
+      uid: payload.ownerUid,
+      groupId: id,
+      role: "owner",
+      joinedAt: now,
+    };
+    await this.db.runTransaction(async (transaction) => {
+      transaction.set(this.portalCollection("groups").doc(id), group);
+      transaction.set(
+        this.portalCollection("memberships").doc(membership.id),
+        membership
+      );
+    });
+    await this.upsertUser({
+      uid: payload.ownerUid,
+      email: payload.ownerEmail,
+      displayName: payload.ownerDisplayName,
+    });
+    await this.ensurePlayerForUser(id, payload.ownerUid, payload.ownerDisplayName);
+    return { group, membership };
+  }
+
+  async joinGroup(payload: {
+    uid: string;
+    email: string | null;
+    displayName: string | null;
+    groupId: string;
+    joinCode: string;
+  }) {
+    const group = await this.getGroup(payload.groupId);
+    if (!group) {
+      throw new FirebaseNotFoundError("Groep niet gevonden.");
+    }
+    if (group.joinCode !== payload.joinCode.trim()) {
+      throw new FirebaseUniqueConstraintError("Onjuiste geheime code.");
+    }
+    const existing = await this.isMemberOfGroup(payload.uid, payload.groupId);
+    if (existing) {
+      const membership = await this.getMembership(payload.uid, payload.groupId);
+      if (!membership) {
+        throw new FirebaseNotFoundError("Lidmaatschap niet gevonden.");
+      }
+      return { group, membership };
+    }
+    const now = new Date();
+    const membership: PortalMembershipRecord = {
+      id: `${payload.groupId}:${payload.uid}`,
+      uid: payload.uid,
+      groupId: payload.groupId,
+      role: "member",
+      joinedAt: now,
+    };
+    await this.portalCollection("memberships")
+      .doc(membership.id)
+      .set(membership);
+    await this.upsertUser({
+      uid: payload.uid,
+      email: payload.email,
+      displayName: payload.displayName,
+    });
+    await this.ensurePlayerForUser(
+      payload.groupId,
+      payload.uid,
+      payload.displayName
+    );
+    return { group, membership };
+  }
+
+  async getMembership(uid: string, groupId: string) {
+    const snapshot = await this.portalCollection("memberships")
+      .doc(`${groupId}:${uid}`)
+      .get();
+    return snapshot.exists
+      ? fromPortalMembershipDoc(snapshot as QueryDocumentSnapshot<DocumentData>)
+      : null;
+  }
+
+  async getPortalSession(
+    userInfo: { uid: string; email: string | null; displayName: string | null },
+    activeGroupId?: string | null
+  ) {
+    const [user, groups, memberships, allMemberships] = await Promise.all([
+      this.upsertUser(userInfo),
+      this.listGroups(),
+      this.listMembershipsForUser(userInfo.uid),
+      this.listMemberships(),
+    ]);
+    const activeGroup = activeGroupId
+      ? groups.find((group) => group.id === activeGroupId) ?? null
+      : null;
+    return {
+      user,
+      groups: groups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        ownerUid: group.ownerUid,
+        createdAt: group.createdAt,
+        updatedAt: group.updatedAt,
+        memberCount: allMemberships.filter((membership) => membership.groupId === group.id).length,
+      })),
+      memberships,
+      activeGroupId: activeGroup?.id ?? memberships[0]?.groupId ?? null,
+    };
+  }
+
+  async listPlayers(groupId: string) {
+    const snapshot = await this.groupCollection(groupId, "players").get();
     return sortBy(snapshot.docs.map(fromPlayerDoc), "name", "asc");
   }
 
-  async getPlayer(id: number) {
-    const doc = await this.collection("players").doc(String(id)).get();
+  async getPlayer(groupId: string, id: number) {
+    const doc = await this.groupCollection(groupId, "players")
+      .doc(String(id))
+      .get();
     return doc.exists ? fromPlayerDoc(doc as QueryDocumentSnapshot<DocumentData>) : null;
   }
 
-  async getPlayersByIds(ids: number[]) {
-    const players = await Promise.all(ids.map((id) => this.getPlayer(id)));
+  async getPlayersByIds(groupId: string, ids: number[]) {
+    const players = await Promise.all(ids.map((id) => this.getPlayer(groupId, id)));
     return players.filter((player): player is PlayerRecord => Boolean(player));
   }
 
-  async createPlayer(name: string) {
+  async createPlayer(groupId: string, name: string, uid?: string | null) {
     const trimmedName = name.trim();
     const normalizedName = normalizeName(trimmedName);
-    const existing = await this.collection("players")
+    const existing = await this.groupCollection(groupId, "players")
       .where("normalizedName", "==", normalizedName)
       .limit(1)
       .get();
@@ -261,28 +559,30 @@ class FirebaseStore {
       throw new FirebaseUniqueConstraintError("Player name must be unique.");
     }
 
-    const id = await this.nextId("players");
+    const id = await this.nextId(groupId, "players");
     const now = new Date();
     const player: PlayerRecord = {
       id,
+      groupId,
+      uid: uid ?? null,
       name: trimmedName,
       normalizedName,
       createdAt: now,
       updatedAt: now,
     };
-    await this.collection("players").doc(String(id)).set(player);
+    await this.groupCollection(groupId, "players").doc(String(id)).set(player);
     return player;
   }
 
-  async updatePlayer(id: number, data: { name: string }) {
-    const existing = await this.getPlayer(id);
+  async updatePlayer(groupId: string, id: number, data: { name: string }) {
+    const existing = await this.getPlayer(groupId, id);
     if (!existing) {
       throw new FirebaseNotFoundError("Player not found.");
     }
 
     const trimmedName = data.name.trim();
     const normalizedName = normalizeName(trimmedName);
-    const duplicate = await this.collection("players")
+    const duplicate = await this.groupCollection(groupId, "players")
       .where("normalizedName", "==", normalizedName)
       .limit(1)
       .get();
@@ -300,25 +600,25 @@ class FirebaseStore {
       normalizedName,
       updatedAt: new Date(),
     };
-    await this.collection("players").doc(String(id)).set(updated);
+    await this.groupCollection(groupId, "players").doc(String(id)).set(updated);
     return updated;
   }
 
-  async deletePlayer(id: number) {
-    const existing = await this.getPlayer(id);
+  async deletePlayer(groupId: string, id: number) {
+    const existing = await this.getPlayer(groupId, id);
     if (!existing) {
       throw new FirebaseNotFoundError("Player not found.");
     }
 
     const [matches, doublesMatches] = await Promise.all([
-      this.listMatches(),
-      this.listDoublesMatches(),
+      this.listMatches(groupId),
+      this.listDoublesMatches(groupId),
     ]);
     const batch = this.db.batch();
     matches
       .filter((match) => match.playerOneId === id || match.playerTwoId === id)
       .forEach((match) => {
-        batch.delete(this.collection("matches").doc(String(match.id)));
+        batch.delete(this.groupCollection(groupId, "matches").doc(String(match.id)));
       });
     doublesMatches
       .filter((match) =>
@@ -330,28 +630,32 @@ class FirebaseStore {
         ].includes(id)
       )
       .forEach((match) => {
-        batch.delete(this.collection("doublesMatches").doc(String(match.id)));
+        batch.delete(
+          this.groupCollection(groupId, "doublesMatches").doc(String(match.id))
+        );
       });
-    batch.delete(this.collection("players").doc(String(id)));
+    batch.delete(this.groupCollection(groupId, "players").doc(String(id)));
     await batch.commit();
     return existing;
   }
 
-  async listSeasons() {
-    const snapshot = await this.collection("seasons").get();
+  async listSeasons(groupId: string) {
+    const snapshot = await this.groupCollection(groupId, "seasons").get();
     return snapshot.docs.map(fromSeasonDoc);
   }
 
-  async getSeason(id: number | null | undefined) {
+  async getSeason(groupId: string, id: number | null | undefined) {
     if (id == null) {
       return null;
     }
-    const doc = await this.collection("seasons").doc(String(id)).get();
+    const doc = await this.groupCollection(groupId, "seasons")
+      .doc(String(id))
+      .get();
     return doc.exists ? fromSeasonDoc(doc as QueryDocumentSnapshot<DocumentData>) : null;
   }
 
-  async findSeasonForDate(date: Date) {
-    const seasons = await this.listSeasons();
+  async findSeasonForDate(groupId: string, date: Date) {
+    const seasons = await this.listSeasons(groupId);
     return (
       seasons.find(
         (season) => season.startDate <= date && season.endDate >= date
@@ -359,8 +663,8 @@ class FirebaseStore {
     );
   }
 
-  async findSeasonByBoundaries(startDate: Date, endDate: Date) {
-    const seasons = await this.listSeasons();
+  async findSeasonByBoundaries(groupId: string, startDate: Date, endDate: Date) {
+    const seasons = await this.listSeasons(groupId);
     return (
       seasons.find(
         (season) =>
@@ -370,21 +674,29 @@ class FirebaseStore {
     );
   }
 
-  async createSeason(data: {
+  async createSeason(
+    groupId: string,
+    data: {
     name: string;
     startDate: Date;
     endDate: Date;
     championId?: number | null;
-  }) {
-    const existing = await this.findSeasonByBoundaries(data.startDate, data.endDate);
+  }
+  ) {
+    const existing = await this.findSeasonByBoundaries(
+      groupId,
+      data.startDate,
+      data.endDate
+    );
     if (existing) {
       throw new FirebaseUniqueConstraintError("Season boundaries must be unique.");
     }
 
-    const id = await this.nextId("seasons");
+    const id = await this.nextId(groupId, "seasons");
     const now = new Date();
     const season: SeasonRecord = {
       id,
+      groupId,
       name: data.name,
       startDate: data.startDate,
       endDate: data.endDate,
@@ -392,12 +704,12 @@ class FirebaseStore {
       createdAt: now,
       updatedAt: now,
     };
-    await this.collection("seasons").doc(String(id)).set(season);
+    await this.groupCollection(groupId, "seasons").doc(String(id)).set(season);
     return season;
   }
 
-  async updateSeason(id: number, data: Partial<SeasonRecord>) {
-    const existing = await this.getSeason(id);
+  async updateSeason(groupId: string, id: number, data: Partial<SeasonRecord>) {
+    const existing = await this.getSeason(groupId, id);
     if (!existing) {
       throw new FirebaseNotFoundError("Season not found.");
     }
@@ -407,22 +719,27 @@ class FirebaseStore {
       ...data,
       updatedAt: new Date(),
     };
-    await this.collection("seasons").doc(String(id)).set(updated);
+    await this.groupCollection(groupId, "seasons").doc(String(id)).set(updated);
     return updated;
   }
 
-  async listMatches() {
-    const snapshot = await this.collection("matches").get();
+  async listMatches(groupId: string) {
+    const snapshot = await this.groupCollection(groupId, "matches").get();
     return snapshot.docs.map(fromMatchDoc);
   }
 
-  async getMatch(id: number) {
-    const doc = await this.collection("matches").doc(String(id)).get();
+  async getMatch(groupId: string, id: number) {
+    const doc = await this.groupCollection(groupId, "matches")
+      .doc(String(id))
+      .get();
     return doc.exists ? fromMatchDoc(doc as QueryDocumentSnapshot<DocumentData>) : null;
   }
 
-  async createMatch(data: Omit<MatchRecord, "id" | "createdAt" | "updatedAt">) {
-    const id = await this.nextId("matches");
+  async createMatch(
+    groupId: string,
+    data: Omit<MatchRecord, "id" | "createdAt" | "updatedAt">
+  ) {
+    const id = await this.nextId(groupId, "matches");
     const now = new Date();
     const match: MatchRecord = {
       id,
@@ -430,12 +747,12 @@ class FirebaseStore {
       createdAt: now,
       updatedAt: now,
     };
-    await this.collection("matches").doc(String(id)).set(match);
+    await this.groupCollection(groupId, "matches").doc(String(id)).set(match);
     return match;
   }
 
-  async updateMatch(id: number, data: Partial<MatchRecord>) {
-    const existing = await this.getMatch(id);
+  async updateMatch(groupId: string, id: number, data: Partial<MatchRecord>) {
+    const existing = await this.getMatch(groupId, id);
     if (!existing) {
       throw new FirebaseNotFoundError("Match not found.");
     }
@@ -444,35 +761,38 @@ class FirebaseStore {
       ...data,
       updatedAt: new Date(),
     };
-    await this.collection("matches").doc(String(id)).set(updated);
+    await this.groupCollection(groupId, "matches").doc(String(id)).set(updated);
     return updated;
   }
 
-  async deleteMatch(id: number) {
-    const existing = await this.getMatch(id);
+  async deleteMatch(groupId: string, id: number) {
+    const existing = await this.getMatch(groupId, id);
     if (!existing) {
       throw new FirebaseNotFoundError("Match not found.");
     }
-    await this.collection("matches").doc(String(id)).delete();
+    await this.groupCollection(groupId, "matches").doc(String(id)).delete();
     return existing;
   }
 
-  async listDoublesMatches() {
-    const snapshot = await this.collection("doublesMatches").get();
+  async listDoublesMatches(groupId: string) {
+    const snapshot = await this.groupCollection(groupId, "doublesMatches").get();
     return snapshot.docs.map(fromDoublesMatchDoc);
   }
 
-  async getDoublesMatch(id: number) {
-    const doc = await this.collection("doublesMatches").doc(String(id)).get();
+  async getDoublesMatch(groupId: string, id: number) {
+    const doc = await this.groupCollection(groupId, "doublesMatches")
+      .doc(String(id))
+      .get();
     return doc.exists
       ? fromDoublesMatchDoc(doc as QueryDocumentSnapshot<DocumentData>)
       : null;
   }
 
   async createDoublesMatch(
+    groupId: string,
     data: Omit<DoublesMatchRecord, "id" | "createdAt" | "updatedAt">
   ) {
-    const id = await this.nextId("doublesMatches");
+    const id = await this.nextId(groupId, "doublesMatches");
     const now = new Date();
     const match: DoublesMatchRecord = {
       id,
@@ -480,12 +800,18 @@ class FirebaseStore {
       createdAt: now,
       updatedAt: now,
     };
-    await this.collection("doublesMatches").doc(String(id)).set(match);
+    await this.groupCollection(groupId, "doublesMatches")
+      .doc(String(id))
+      .set(match);
     return match;
   }
 
-  async updateDoublesMatch(id: number, data: Partial<DoublesMatchRecord>) {
-    const existing = await this.getDoublesMatch(id);
+  async updateDoublesMatch(
+    groupId: string,
+    id: number,
+    data: Partial<DoublesMatchRecord>
+  ) {
+    const existing = await this.getDoublesMatch(groupId, id);
     if (!existing) {
       throw new FirebaseNotFoundError("Doubles match not found.");
     }
@@ -494,25 +820,29 @@ class FirebaseStore {
       ...data,
       updatedAt: new Date(),
     };
-    await this.collection("doublesMatches").doc(String(id)).set(updated);
+    await this.groupCollection(groupId, "doublesMatches")
+      .doc(String(id))
+      .set(updated);
     return updated;
   }
 
-  async deleteDoublesMatch(id: number) {
-    const existing = await this.getDoublesMatch(id);
+  async deleteDoublesMatch(groupId: string, id: number) {
+    const existing = await this.getDoublesMatch(groupId, id);
     if (!existing) {
       throw new FirebaseNotFoundError("Doubles match not found.");
     }
-    await this.collection("doublesMatches").doc(String(id)).delete();
+    await this.groupCollection(groupId, "doublesMatches")
+      .doc(String(id))
+      .delete();
     return existing;
   }
 
-  async hydrateMatch(match: MatchRecord): Promise<MatchWithRelations> {
+  async hydrateMatch(groupId: string, match: MatchRecord): Promise<MatchWithRelations> {
     const [playerOne, playerTwo, winner, season] = await Promise.all([
-      this.getPlayer(match.playerOneId),
-      this.getPlayer(match.playerTwoId),
-      this.getPlayer(match.winnerId),
-      this.getSeason(match.seasonId),
+      this.getPlayer(groupId, match.playerOneId),
+      this.getPlayer(groupId, match.playerTwoId),
+      this.getPlayer(groupId, match.winnerId),
+      this.getSeason(groupId, match.seasonId),
     ]);
 
     if (!playerOne || !playerTwo || !winner) {
@@ -529,6 +859,7 @@ class FirebaseStore {
   }
 
   async hydrateDoublesMatch(
+    groupId: string,
     match: DoublesMatchRecord
   ): Promise<DoublesMatchWithRelations> {
     const [
@@ -538,11 +869,11 @@ class FirebaseStore {
       teamTwoPlayerB,
       season,
     ] = await Promise.all([
-      this.getPlayer(match.teamOnePlayerAId),
-      this.getPlayer(match.teamOnePlayerBId),
-      this.getPlayer(match.teamTwoPlayerAId),
-      this.getPlayer(match.teamTwoPlayerBId),
-      this.getSeason(match.seasonId),
+      this.getPlayer(groupId, match.teamOnePlayerAId),
+      this.getPlayer(groupId, match.teamOnePlayerBId),
+      this.getPlayer(groupId, match.teamTwoPlayerAId),
+      this.getPlayer(groupId, match.teamTwoPlayerBId),
+      this.getSeason(groupId, match.seasonId),
     ]);
 
     if (!teamOnePlayerA || !teamOnePlayerB || !teamTwoPlayerA || !teamTwoPlayerB) {
@@ -559,10 +890,13 @@ class FirebaseStore {
     };
   }
 
-  async fetchPlayersWithRelations(playerId?: number): Promise<PlayerWithRelations[]> {
+  async fetchPlayersWithRelations(
+    groupId: string,
+    playerId?: number
+  ): Promise<PlayerWithRelations[]> {
     const [players, matches] = await Promise.all([
-      this.listPlayers(),
-      this.listMatches(),
+      this.listPlayers(groupId),
+      this.listMatches(groupId),
     ]);
     return players
       .filter((player) => (playerId ? player.id === playerId : true))
@@ -574,8 +908,8 @@ class FirebaseStore {
       }));
   }
 
-  async getChampionCounts() {
-    const seasons = await this.listSeasons();
+  async getChampionCounts(groupId: string) {
+    const seasons = await this.listSeasons(groupId);
     const map = new Map<number, number>();
     seasons.forEach((season) => {
       if (season.championId != null) {
@@ -585,10 +919,10 @@ class FirebaseStore {
     return map;
   }
 
-  async listSeasonSummaries(): Promise<SeasonWithRelations[]> {
+  async listSeasonSummaries(groupId: string): Promise<SeasonWithRelations[]> {
     const [seasons, matches] = await Promise.all([
-      this.listSeasons(),
-      this.listMatches(),
+      this.listSeasons(groupId),
+      this.listMatches(groupId),
     ]);
     const orderedSeasons = sortBy(seasons, "startDate", "desc");
     return Promise.all(
@@ -596,7 +930,7 @@ class FirebaseStore {
         const seasonMatches = await Promise.all(
           matches
             .filter((match) => match.seasonId === season.id)
-            .map((match) => this.hydrateMatch(match))
+            .map((match) => this.hydrateMatch(groupId, match))
         );
         return {
           ...season,
@@ -604,14 +938,17 @@ class FirebaseStore {
           champion:
             season.championId == null
               ? null
-              : await this.getPlayer(season.championId),
+              : await this.getPlayer(groupId, season.championId),
         };
       })
     );
   }
 
-  async listPastSeasonsWithMatches(now: Date): Promise<SeasonWithRelations[]> {
-    const seasons = await this.listSeasonSummaries();
+  async listPastSeasonsWithMatches(
+    groupId: string,
+    now: Date
+  ): Promise<SeasonWithRelations[]> {
+    const seasons = await this.listSeasonSummaries(groupId);
     return seasons.filter((season) => season.endDate < now);
   }
 

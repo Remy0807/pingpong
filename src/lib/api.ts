@@ -5,6 +5,7 @@ import type {
   PlayerStats,
   SeasonSummary,
 } from "../types";
+import { getActiveGroupId, getAuthToken } from "./sessionStore";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -12,11 +13,23 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const url = input.toString().startsWith("http")
     ? input
     : `${API_BASE_URL}${input}`;
+
+  const headers = new Headers(init?.headers ?? {});
+  headers.set("Content-Type", "application/json");
+
+  const authToken = getAuthToken();
+  if (authToken) {
+    headers.set("Authorization", `Bearer ${authToken}`);
+  }
+
+  const groupId = getActiveGroupId();
+  if (groupId) {
+    headers.set("X-Group-Id", groupId);
+  }
+
   const response = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-    },
     ...init,
+    headers,
   });
 
   if (!response.ok) {
@@ -52,6 +65,63 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+export type PortalGroup = {
+  id: string;
+  name: string;
+  ownerUid: string;
+  joinCodeHint?: string | null;
+  memberCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PortalMembership = {
+  groupId: string;
+  role: "owner" | "member";
+  joinedAt: string;
+};
+
+export type PortalUser = {
+  uid: string;
+  email: string | null;
+  displayName: string | null;
+};
+
+export type PortalSession = {
+  user: PortalUser;
+  groups: PortalGroup[];
+  memberships: PortalMembership[];
+  activeGroupId: string | null;
+};
+
+export function getPortalSession(): Promise<PortalSession> {
+  return request<PortalSession>("/api/portal/session");
+}
+
+export function getPortalGroups(): Promise<PortalGroup[]> {
+  return request<PortalGroup[]>("/api/portal/groups");
+}
+
+export function createPortalGroup(payload: {
+  name: string;
+  joinCode: string;
+}): Promise<{ group: PortalGroup; membership: PortalMembership }> {
+  return request<{ group: PortalGroup; membership: PortalMembership }>("/api/portal/groups", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function joinPortalGroup(payload: {
+  groupId: string;
+  joinCode: string;
+}): Promise<{ group: PortalGroup; membership: PortalMembership }> {
+  return request<{ group: PortalGroup; membership: PortalMembership }>(`/api/portal/groups/${payload.groupId}/join`, {
+    method: "POST",
+    body: JSON.stringify({ joinCode: payload.joinCode }),
+  });
 }
 
 export function getPlayerStats(): Promise<PlayerStats[]> {
