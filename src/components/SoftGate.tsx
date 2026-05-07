@@ -125,22 +125,6 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
     emailRef.current?.focus();
   }, [authMode, authReady]);
 
-  useEffect(() => {
-    if (ready) {
-      document.documentElement.style.overflow = "";
-      document.body.style.overflow = "";
-      return;
-    }
-
-    document.documentElement.style.overflow = "hidden";
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.documentElement.style.overflow = "";
-      document.body.style.overflow = "";
-    };
-  }, [ready]);
-
   const handleLogin = async () => {
     setBusy(true);
     setError(null);
@@ -263,6 +247,22 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
   };
 
   const ready = Boolean(authReady && portalSession && activeGroupId && activeGroup);
+
+  useEffect(() => {
+    if (ready) {
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
+      return;
+    }
+
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
+    };
+  }, [ready]);
 
   const contextValue: PortalContextValue = {
     ready,
