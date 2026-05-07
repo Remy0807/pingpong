@@ -173,13 +173,16 @@ export function MatchForm({
       return;
     }
 
+    const batchBasePlayedAt = playedAt ? new Date(playedAt) : undefined;
     const matches = allowMultiple
-      ? scoreRows.map((row) => ({
+      ? scoreRows.map((row, index) => ({
           playerOneId,
           playerTwoId,
           playerOnePoints: row.playerOnePoints,
           playerTwoPoints: row.playerTwoPoints,
-          playedAt: playedAt ? new Date(playedAt).toISOString() : undefined,
+          playedAt: batchBasePlayedAt
+            ? new Date(batchBasePlayedAt.getTime() + index * 1000).toISOString()
+            : undefined,
         }))
       : [
           {
@@ -255,6 +258,23 @@ export function MatchForm({
       ...rows,
       createScoreRow(Math.max(...rows.map((row) => row.id)) + 1),
     ]);
+  };
+
+  const moveScoreRow = (id: number, direction: "up" | "down") => {
+    setScoreRows((rows) => {
+      const index = rows.findIndex((row) => row.id === id);
+      if (index < 0) {
+        return rows;
+      }
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= rows.length) {
+        return rows;
+      }
+
+      const nextRows = [...rows];
+      [nextRows[index], nextRows[targetIndex]] = [nextRows[targetIndex], nextRows[index]];
+      return nextRows;
+    });
   };
 
   const removeScoreRow = (id: number) => {
@@ -381,16 +401,55 @@ export function MatchForm({
               + Potje
             </button>
           </div>
+          <p className="text-xs text-slate-500">
+            Zet de potjes in speelvolgorde. Bovenaan is eerst, onderaan is laatst.
+            Dat bepaalt ook de Elo-volgorde.
+          </p>
           <div className="space-y-2">
             {scoreRows.map((row, index) => (
               <div
                 key={row.id}
                 className="rounded-lg border border-white/10 bg-slate-950/30 p-3"
               >
-                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-xs uppercase tracking-[0.3em] text-axoft-200/80">
+                    #{index + 1} volgorde
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => moveScoreRow(row.id, "up")}
+                      disabled={index === 0}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-sm font-semibold text-slate-300 transition hover:border-axoft-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={`Potje ${index + 1} omhoog`}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveScoreRow(row.id, "down")}
+                      disabled={index === scoreRows.length - 1}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-sm font-semibold text-slate-300 transition hover:border-axoft-400 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={`Potje ${index + 1} omlaag`}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeScoreRow(row.id)}
+                      disabled={scoreRows.length === 1}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-sm font-semibold text-slate-300 transition hover:border-rose-400 hover:text-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-500/30 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={`Potje ${index + 1} verwijderen`}
+                    >
+                      X
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
                   <div className="space-y-1">
                     <label className="block text-xs font-medium text-slate-400">
-                      Potje {index + 1} - speler A
+                      Speler A
                     </label>
                     <input
                       type="number"
@@ -409,7 +468,7 @@ export function MatchForm({
                   </div>
                   <div className="space-y-1">
                     <label className="block text-xs font-medium text-slate-400">
-                      Potje {index + 1} - speler B
+                      Speler B
                     </label>
                     <input
                       type="number"
@@ -426,15 +485,6 @@ export function MatchForm({
                       className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-3 py-2 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
                     />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => removeScoreRow(row.id)}
-                    disabled={scoreRows.length === 1}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 text-sm font-semibold text-slate-300 transition hover:border-rose-400 hover:text-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-500/30 disabled:cursor-not-allowed disabled:opacity-40"
-                    aria-label={`Potje ${index + 1} verwijderen`}
-                  >
-                    X
-                  </button>
                 </div>
               </div>
             ))}
