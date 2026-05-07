@@ -32,8 +32,10 @@ import { EloSimulatorPage } from "./pages/EloSimulatorPage";
 import { WallOfShamePage } from "./pages/WallOfShamePage";
 import { RivalryPage } from "./pages/RivalryPage";
 import { DoublesPage } from "./pages/DoublesPage";
+import { usePortal } from "./context/PortalContext";
 
 export default function App() {
+  const { activeGroupId } = usePortal();
   const [players, setPlayers] = useState<PlayerStats[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [doublesMatches, setDoublesMatches] = useState<DoublesMatch[]>([]);
@@ -94,7 +96,7 @@ export default function App() {
     refreshAll().catch((err) => {
       console.error(err);
     });
-  }, [refreshAll]);
+  }, [refreshAll, activeGroupId]);
 
   const handlePlayerCreate = useCallback(
     async (name: string) => {

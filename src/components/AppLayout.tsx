@@ -19,7 +19,7 @@ const secondaryNavLinks = [
 
 export function AppLayout() {
   const { players, matches, doublesMatches, error, loading } = useAppData();
-  const { activeGroup } = usePortal();
+  const { activeGroup, activeGroupId, groups, selectGroup, logout } = usePortal();
   const totalMatches = matches.length + doublesMatches.length;
   const [moreOpen, setMoreOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
@@ -138,6 +138,36 @@ export function AppLayout() {
                 <span>
                   {matches.length} / {doublesMatches.length}
                 </span>
+              </div>
+            </div>
+            <div className="glass-card flex flex-col gap-3 rounded-xl p-4 text-sm text-white">
+              <span className="text-xs uppercase tracking-widest text-axoft-200/80">
+                Groep
+              </span>
+              <select
+                value={activeGroupId ?? ""}
+                onChange={(e) => {
+                  const nextGroupId = e.target.value;
+                  if (nextGroupId) {
+                    selectGroup(nextGroupId).catch(console.error);
+                  }
+                }}
+                className="rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none transition focus:border-axoft-400"
+              >
+                {groups.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name}
+                  </option>
+                ))}
+              </select>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => logout().catch(console.error)}
+                  className="flex-1 rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-white/20 hover:text-white"
+                >
+                  Uitloggen
+                </button>
               </div>
             </div>
           </div>

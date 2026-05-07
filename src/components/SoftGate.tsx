@@ -38,6 +38,7 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [portalSession, setPortalSession] = useState<PortalSession | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [authTokenReady, setAuthTokenReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(true);
@@ -84,6 +85,7 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsubscribe = onIdTokenChanged(firebaseAuth, async (user) => {
       setAuthReady(false);
+      setAuthTokenReady(false);
       setError(null);
 
       try {
@@ -94,6 +96,7 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
           setActiveGroupId(null);
           localStorage.removeItem("pp_active_group_id");
           setAuthReady(true);
+          setAuthTokenReady(true);
           return;
         }
 
@@ -111,6 +114,7 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
         );
       } finally {
         setAuthReady(true);
+        setAuthTokenReady(true);
         setRestoring(false);
       }
     });
@@ -246,7 +250,9 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const ready = Boolean(authReady && portalSession && activeGroupId && activeGroup);
+  const ready = Boolean(
+    authReady && authTokenReady && portalSession && activeGroupId && activeGroup
+  );
 
   useEffect(() => {
     if (ready) {
