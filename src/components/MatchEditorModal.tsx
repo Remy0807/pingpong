@@ -8,6 +8,10 @@ type MatchEditorModalProps = {
   match: Match | null;
   open: boolean;
   players: PlayerStats[];
+  playerOptions?: Array<{
+    value: number;
+    label: string;
+  }>;
   loading?: boolean;
   onClose: () => void;
   onSubmit: (id: number, payload: MatchPayload) => Promise<void> | void;
@@ -17,6 +21,7 @@ export function MatchEditorModal({
   match,
   open,
   players,
+  playerOptions,
   loading,
   onClose,
   onSubmit
@@ -52,6 +57,7 @@ export function MatchEditorModal({
     >
       <MatchForm
         players={players}
+        playerOptions={playerOptions}
         loading={loading}
         onSubmit={handleSubmit}
         submitLabel="Wedstrijd bijwerken"

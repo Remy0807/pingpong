@@ -11,6 +11,10 @@ type DoublesMatchEditorModalProps = {
   match: DoublesMatch | null;
   open: boolean;
   players: PlayerStats[];
+  playerOptions?: Array<{
+    value: number;
+    label: string;
+  }>;
   loading?: boolean;
   onClose: () => void;
   onSubmit: (id: number, payload: DoublesMatchPayload) => Promise<void> | void;
@@ -20,6 +24,7 @@ export function DoublesMatchEditorModal({
   match,
   open,
   players,
+  playerOptions,
   loading,
   onClose,
   onSubmit,
@@ -50,6 +55,7 @@ export function DoublesMatchEditorModal({
     >
       <DoublesMatchForm
         players={players}
+        playerOptions={playerOptions}
         loading={loading}
         onSubmit={handleSubmit}
         submitLabel="2v2 bijwerken"

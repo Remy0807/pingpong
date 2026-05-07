@@ -359,6 +359,22 @@ class FirebaseStore {
     return player;
   }
 
+  async ensurePlayersForGroupMembers(groupId: string) {
+    const memberships = await this.listMembershipsForGroup(groupId);
+    const users = await Promise.all(
+      memberships.map(async (membership) => ({
+        uid: membership.uid,
+        user: await this.getPortalUser(membership.uid),
+      }))
+    );
+
+    await Promise.all(
+      users.map(({ uid, user }) =>
+        this.ensurePlayerForUser(groupId, uid, user?.displayName ?? null)
+      )
+    );
+  }
+
   async upsertUser(user: {
     uid: string;
     email: string | null;

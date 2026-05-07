@@ -18,6 +18,7 @@ import type { DoublesMatch } from "../types";
 export function DoublesPage() {
   const {
     players,
+    groupMembers,
     doublesMatches,
     seasons,
     currentSeasonId,
@@ -36,6 +37,16 @@ export function DoublesPage() {
   const [editingMatch, setEditingMatch] = useState<DoublesMatch | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<DoublesMatch | null>(
     null
+  );
+  const memberPlayerOptions = useMemo(
+    () =>
+      groupMembers
+        .filter((member) => member.playerId != null)
+        .map((member) => ({
+          value: member.playerId!,
+          label: member.displayName ?? member.email ?? `Speler ${member.playerId}`,
+        })),
+    [groupMembers]
   );
 
   useEffect(() => {
@@ -238,9 +249,10 @@ export function DoublesPage() {
         description="Registreer een teamscore voor twee duo's."
         size="lg"
       >
-        <DoublesMatchForm
-          players={players}
-          onSubmit={async (values) => {
+      <DoublesMatchForm
+        players={players}
+        playerOptions={memberPlayerOptions.length ? memberPlayerOptions : undefined}
+        onSubmit={async (values) => {
             await createDoublesMatch(values);
             setCreateOpen(false);
           }}
@@ -254,6 +266,7 @@ export function DoublesPage() {
         open={editingMatch != null}
         match={editingMatch}
         players={players}
+        playerOptions={memberPlayerOptions.length ? memberPlayerOptions : undefined}
         loading={updatingDoublesMatch}
         onClose={() => setEditingMatch(null)}
         onSubmit={updateDoublesMatch}

@@ -5,6 +5,7 @@ import { AppDataProvider } from "./context/AppDataContext";
 import {
   createDoublesMatch,
   getAccountOverview,
+  getPortalGroup,
   getMatches,
   getDoublesMatches,
   getPlayerStats,
@@ -21,6 +22,7 @@ import {
   type AccountOverview,
   type DoublesMatchPayload,
   type MatchPayload,
+  type PortalGroupMember,
 } from "./lib/api";
 import type { DoublesMatch, Match, PlayerStats, SeasonSummary } from "./types";
 import { AppLayout } from "./components/AppLayout";
@@ -45,6 +47,7 @@ function PortalAwareApp() {
   const [seasons, setSeasons] = useState<SeasonSummary[]>([]);
   const [currentSeasonId, setCurrentSeasonId] = useState<number | null>(null);
   const [accountOverview, setAccountOverview] = useState<AccountOverview | null>(null);
+  const [groupMembers, setGroupMembers] = useState<PortalGroupMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingPlayer, setSavingPlayer] = useState(false);
@@ -83,6 +86,11 @@ function PortalAwareApp() {
     setAccountOverview(overview);
   }, []);
 
+  const loadGroupMembers = useCallback(async (groupId: string) => {
+    const details = await getPortalGroup(groupId);
+    setGroupMembers(details.members);
+  }, []);
+
   const refreshAll = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -111,6 +119,7 @@ function PortalAwareApp() {
       setSeasons([]);
       setCurrentSeasonId(null);
       setAccountOverview(null);
+      setGroupMembers([]);
       return;
     }
 
@@ -120,6 +129,7 @@ function PortalAwareApp() {
       setDoublesMatches([]);
       setSeasons([]);
       setCurrentSeasonId(null);
+      setGroupMembers([]);
       setLoading(true);
       setError(null);
       loadOverview()
@@ -134,10 +144,13 @@ function PortalAwareApp() {
     }
 
     setAccountOverview(null);
+    loadGroupMembers(activeGroupId).catch((err) => {
+      console.error(err);
+    });
     refreshAll().catch((err) => {
       console.error(err);
     });
-  }, [activeGroupId, loadOverview, portalMode, refreshAll]);
+  }, [activeGroupId, loadGroupMembers, loadOverview, portalMode, refreshAll]);
 
   const handlePlayerCreate = useCallback(
     async (name: string) => {
@@ -350,6 +363,7 @@ function PortalAwareApp() {
       seasons,
       currentSeasonId,
       accountOverview,
+      groupMembers,
       loading,
       error,
       savingPlayer,
@@ -381,6 +395,7 @@ function PortalAwareApp() {
       seasons,
       currentSeasonId,
       accountOverview,
+      groupMembers,
       loading,
       error,
       savingPlayer,

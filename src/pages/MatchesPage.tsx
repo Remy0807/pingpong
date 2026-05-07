@@ -25,6 +25,7 @@ const capitalize = (value: string) =>
 export function MatchesPage() {
   const {
     players,
+    groupMembers,
     matches,
     seasons,
     savingMatch,
@@ -41,6 +42,16 @@ export function MatchesPage() {
   const [viewMode, setViewMode] = useState<MatchViewMode>("grouped");
 
   const [filters, setFilters] = useState<MatchFiltersType>({});
+  const memberPlayerOptions = useMemo(
+    () =>
+      groupMembers
+        .filter((member) => member.playerId != null)
+        .map((member) => ({
+          value: member.playerId!,
+          label: member.displayName ?? member.email ?? `Speler ${member.playerId}`,
+        })),
+    [groupMembers]
+  );
 
   const filteredAndSortedMatches = useMemo(() => {
     return [...matches]
@@ -310,13 +321,14 @@ export function MatchesPage() {
         )}
       </section>
 
-      <MatchEditorModal
-        open={Boolean(editingMatch)}
-        match={editingMatch}
-        players={players}
-        loading={updatingMatch}
-        onClose={() => setEditingMatch(null)}
-        onSubmit={updateMatch}
+        <MatchEditorModal
+          open={Boolean(editingMatch)}
+          match={editingMatch}
+          players={players}
+        playerOptions={memberPlayerOptions.length ? memberPlayerOptions : undefined}
+          loading={updatingMatch}
+          onClose={() => setEditingMatch(null)}
+          onSubmit={updateMatch}
       />
 
       <Modal
@@ -328,6 +340,7 @@ export function MatchesPage() {
       >
         <MatchForm
           players={players}
+          playerOptions={memberPlayerOptions.length ? memberPlayerOptions : undefined}
           onSubmit={handleCreateMatches}
           allowMultiple
           loading={savingMatch}

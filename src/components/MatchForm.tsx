@@ -17,6 +17,10 @@ type ScoreRow = {
 
 type BaseMatchFormProps = {
   players: PlayerStats[];
+  playerOptions?: Array<{
+    value: number;
+    label: string;
+  }>;
   loading?: boolean;
   submitLabel?: string;
   title?: string;
@@ -66,6 +70,7 @@ const toDateTimeLocal = (value: Date | string | undefined) => {
 
 export function MatchForm({
   players,
+  playerOptions: providedPlayerOptions,
   onSubmit,
   loading,
   submitLabel = "Resultaat opslaan",
@@ -125,11 +130,12 @@ export function MatchForm({
 
   const playerOptions = useMemo(
     () =>
+      providedPlayerOptions?.filter((option) => Number.isFinite(option.value)) ??
       players.map((stats) => ({
         value: stats.player.id,
         label: stats.player.name,
       })),
-    [players]
+    [providedPlayerOptions, players]
   );
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -447,7 +453,7 @@ export function MatchForm({
           ) : null}
           <button
             type="submit"
-            disabled={loading || players.length < 2}
+            disabled={loading || playerOptions.length < 2}
             className="inline-flex items-center justify-center rounded-lg bg-axoft-500 px-6 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-axoft-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-950 focus:ring-axoft-500 disabled:cursor-not-allowed disabled:bg-axoft-500/60"
           >
             {loading ? "Opslaan..." : submitText}
@@ -455,7 +461,7 @@ export function MatchForm({
         </div>
       </div>
 
-      {players.length < 2 ? (
+      {playerOptions.length < 2 ? (
         <p className="text-sm text-amber-400">
           Voeg minimaal twee spelers toe om een potje te registreren.
         </p>

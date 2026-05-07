@@ -183,6 +183,7 @@ export function joinPortalGroup(payload: {
 
 export type PortalGroupMember = {
   uid: string;
+  playerId?: number | null;
   email: string | null;
   displayName: string | null;
   role: "owner" | "member";

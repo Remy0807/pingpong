@@ -115,6 +115,8 @@ const getRequestContext = async (req: AuthedRequest, res: Response) => {
     return null;
   }
 
+  await store.ensurePlayersForGroupMembers(groupId);
+
   return { user, groupId };
 };
 
@@ -1540,8 +1542,10 @@ app.get("/api/portal/groups/:groupId", async (req, res, next) => {
     const members = await Promise.all(
       memberships.map(async (groupMembership) => {
         const memberUser = await store.getPortalUser(groupMembership.uid);
+        const player = await store.getPlayerByUid(groupId, groupMembership.uid);
         return {
           uid: groupMembership.uid,
+          playerId: player?.id ?? null,
           email: memberUser?.email ?? null,
           displayName:
             memberUser?.displayName ??

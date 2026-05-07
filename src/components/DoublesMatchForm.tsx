@@ -13,6 +13,10 @@ export type DoublesMatchFormValues = {
 
 type DoublesMatchFormProps = {
   players: PlayerStats[];
+  playerOptions?: Array<{
+    value: number;
+    label: string;
+  }>;
   onSubmit: (match: DoublesMatchFormValues) => Promise<void> | void;
   loading?: boolean;
   submitLabel?: string;
@@ -43,6 +47,7 @@ const toDateTimeLocal = (value: Date | string | undefined) => {
 
 export function DoublesMatchForm({
   players,
+  playerOptions: providedPlayerOptions,
   onSubmit,
   loading,
   submitLabel = "2v2 opslaan",
@@ -92,11 +97,12 @@ export function DoublesMatchForm({
 
   const options = useMemo(
     () =>
+      providedPlayerOptions?.filter((option) => Number.isFinite(option.value)) ??
       players.map((entry) => ({
         value: entry.player.id,
         label: entry.player.name,
       })),
-    [players]
+    [providedPlayerOptions, players]
   );
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -286,7 +292,7 @@ export function DoublesMatchForm({
           ) : null}
           <button
             type="submit"
-            disabled={loading || players.length < 4}
+            disabled={loading || options.length < 4}
             className="inline-flex items-center justify-center rounded-lg bg-axoft-500 px-6 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-axoft-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-950 focus:ring-axoft-500 disabled:cursor-not-allowed disabled:bg-axoft-500/60"
           >
             {loading ? "Opslaan..." : submitLabel}
@@ -294,7 +300,7 @@ export function DoublesMatchForm({
         </div>
       </div>
 
-      {players.length < 4 ? (
+      {options.length < 4 ? (
         <p className="text-sm text-amber-400">
           Voeg minimaal vier spelers toe om een 2v2-potje te registreren.
         </p>
