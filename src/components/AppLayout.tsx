@@ -50,6 +50,7 @@ export function AppLayout() {
   const [groupQuery, setGroupQuery] = useState("");
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [joinCreateOpen, setJoinCreateOpen] = useState(false);
   const [joinCreateTab, setJoinCreateTab] = useState<"join" | "create">("join");
   const [profileOpen, setProfileOpen] = useState(false);
@@ -227,230 +228,306 @@ export function AppLayout() {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 lg:h-screen lg:overflow-hidden">
-      <div className="mx-auto grid min-h-screen max-w-[1600px] lg:h-screen lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="flex flex-col border-b border-white/10 bg-slate-950/95 lg:h-full lg:overflow-hidden lg:border-b-0 lg:border-r">
-          <div className="relative border-b border-white/5 px-4 py-4 sm:px-5">
-            <p className="text-xs uppercase tracking-[0.35em] text-axoft-200">
-              PingPong Scores
-            </p>
-            <div className="mt-3 flex items-center gap-2">
-              <div className="relative min-w-0 flex-1" ref={groupMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setGroupMenuOpen((prev) => !prev)}
-                  className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-left transition hover:border-white/20 hover:bg-white/[0.07]"
-                  aria-haspopup="listbox"
-                  aria-expanded={groupMenuOpen}
-                >
-                  <span className="min-w-0 truncate text-sm font-medium text-white">
-                    {selectedGroupLabel}
-                  </span>
-                  <span className="text-xs text-slate-400">▾</span>
-                </button>
+  const closeAllMenus = () => {
+    setGroupMenuOpen(false);
+    setActionMenuOpen(false);
+    setAccountMenuOpen(false);
+    setMobileNavOpen(false);
+  };
 
-                {groupMenuOpen ? (
-                  <div className="absolute left-0 top-full z-30 mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950 p-2 shadow-2xl backdrop-blur">
-                    <input
-                      ref={groupQueryInputRef}
-                      value={groupQuery}
-                      onChange={(event) => setGroupQuery(event.target.value)}
-                      placeholder="Zoek groep of overal"
-                      className="mb-2 w-full rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2.5 text-sm text-white outline-none placeholder:text-slate-500 focus:border-axoft-400"
-                    />
-                    <div className="max-h-64 overflow-y-auto pr-1">
-                      {filteredGroups.length ? (
-                        filteredGroups.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={async () => {
-                              setGroupMenuOpen(false);
-                              if (item.kind === "overall") {
-                                await selectOverall();
-                                return;
-                              }
-                              await selectGroup(item.id);
-                            }}
-                            className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition ${
-                              item.kind === "overall" &&
-                              activeGroup == null &&
-                              selectedGroupLabel === item.label
-                                ? "bg-axoft-500 text-slate-950"
-                                : item.kind === "group" && activeGroup?.id === item.id
-                                  ? "bg-axoft-500 text-slate-950"
-                                  : "text-slate-200 hover:bg-white/5 hover:text-white"
-                            }`}
-                          >
-                            <span className="truncate">{item.label}</span>
-                            {item.kind === "overall" ? (
-                              <span className="text-[11px] uppercase tracking-[0.2em] opacity-70">
-                                Alles
-                              </span>
-                            ) : null}
-                          </button>
-                        ))
-                      ) : (
-                        <div className="px-3 py-4 text-sm text-slate-400">
-                          Geen groepen gevonden.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="relative shrink-0 pt-0.5" ref={actionMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setActionMenuOpen((prev) => !prev)}
-                  className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-lg text-slate-300 transition hover:border-white/20 hover:text-white"
-                  aria-label="Groep acties"
-                >
-                  ⋮
-                </button>
-
-                {actionMenuOpen ? (
-                  <div className="absolute right-0 z-30 mt-2 w-48 overflow-hidden rounded-2xl border border-white/15 bg-slate-950 p-1 shadow-2xl">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActionMenuOpen(false);
-                        setJoinCreateTab("join");
-                        setJoinCreateOpen(true);
-                      }}
-                      className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
-                    >
-                      Groep joinen
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActionMenuOpen(false);
-                        setJoinCreateTab("create");
-                        setJoinCreateOpen(true);
-                      }}
-                      className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
-                    >
-                      Groep aanmaken
-                    </button>
-                    {activeGroup ? (
-                      <>
-                        <div className="my-1 h-px bg-white/10" />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActionMenuOpen(false);
-                            setDangerAction(activeIsOwner ? "delete" : "leave");
-                          }}
-                          className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-rose-200 transition hover:bg-rose-500/10 hover:text-rose-100"
-                        >
-                          {activeIsOwner ? "Groep verwijderen" : "Groep verlaten"}
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          <nav className="flex-1 space-y-1 overflow-hidden px-2 py-4 sm:px-3">
-            <NavLink
-              to="/"
-              end
-              className={({ isActive }) =>
-                `flex items-center rounded-2xl px-3 py-3 text-sm font-medium transition ${
-                  isActive
-                    ? "bg-axoft-500 text-slate-950"
-                    : "text-slate-200 hover:bg-white/5 hover:text-white"
-                }`
-              }
-            >
-              Dashboard
-            </NavLink>
-
-            {groupNavLinks.map((link) => (
-              <NavLink
-                key={link.to}
-                to={link.to}
-                onClick={(event) => {
-                  if (!activeGroup) {
-                    event.preventDefault();
-                  }
-                }}
-                className={({ isActive }) =>
-                  `flex items-center rounded-2xl px-3 py-3 text-sm transition ${
-                    activeGroup
-                      ? isActive
-                        ? "bg-axoft-500 text-slate-950"
-                        : "text-slate-200 hover:bg-white/5 hover:text-white"
-                      : "cursor-not-allowed text-slate-500 opacity-50"
-                  }`
-                }
-                title={
-                  activeGroup
-                    ? undefined
-                    : "Selecteer eerst een groep om deze pagina te openen"
-                }
-              >
-                {link.label}
-              </NavLink>
-            ))}
-          </nav>
-
-          <div className="relative border-t border-white/10 px-3 py-4 sm:px-4" ref={accountMenuRef}>
+  const renderSidebarContent = (isMobile = false) => (
+    <>
+      <div className="relative border-b border-white/5 px-4 py-4 sm:px-5">
+        <p className="text-xs uppercase tracking-[0.35em] text-axoft-200">
+          PingPong Scores
+        </p>
+        <div className="mt-3 flex items-center gap-2">
+          <div className="relative min-w-0 flex-1" ref={groupMenuRef}>
             <button
               type="button"
-              onClick={() => setAccountMenuOpen((prev) => !prev)}
-              className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-left transition hover:border-white/20 hover:bg-white/[0.07]"
+              onClick={() => setGroupMenuOpen((prev) => !prev)}
+              className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-left transition hover:border-white/20 hover:bg-white/[0.07]"
+              aria-haspopup="listbox"
+              aria-expanded={groupMenuOpen}
             >
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-axoft-500 text-sm font-semibold text-slate-950">
-                {getInitials(user?.displayName ?? user?.email ?? "P")}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-white">
-                  {user?.displayName ?? "Mijn account"}
-                </p>
-                <p className="truncate text-xs text-slate-400">
-                  {user?.email ?? "Ingelogd"}
-                </p>
-              </div>
+              <span className="min-w-0 truncate text-sm font-medium text-white">
+                {selectedGroupLabel}
+              </span>
               <span className="text-xs text-slate-400">▾</span>
             </button>
 
-            {accountMenuOpen ? (
-              <div className="mt-2 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/98 p-1 shadow-2xl">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAccountMenuOpen(false);
-                    setProfileOpen(true);
-                  }}
-                  className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
-                >
-                  Profiel aanpassen
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAccountMenuOpen(false);
-                    void logout();
-                  }}
-                  className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-rose-200 transition hover:bg-rose-500/10 hover:text-rose-100"
-                >
-                  Uitloggen
-                </button>
+            {groupMenuOpen ? (
+              <div
+                className={`absolute left-0 top-full z-30 mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950 p-2 shadow-2xl backdrop-blur ${
+                  isMobile ? "max-h-[60dvh]" : ""
+                }`}
+              >
+                <input
+                  ref={groupQueryInputRef}
+                  value={groupQuery}
+                  onChange={(event) => setGroupQuery(event.target.value)}
+                  placeholder="Zoek groep of overal"
+                  className="mb-2 w-full rounded-xl border border-white/10 bg-slate-950/80 px-3 py-2.5 text-sm text-white outline-none placeholder:text-slate-500 focus:border-axoft-400"
+                />
+                <div className="max-h-64 overflow-y-auto pr-1">
+                  {filteredGroups.length ? (
+                    filteredGroups.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={async () => {
+                          setGroupMenuOpen(false);
+                          if (item.kind === "overall") {
+                            await selectOverall();
+                            return;
+                          }
+                          await selectGroup(item.id);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition ${
+                          item.kind === "overall" &&
+                          activeGroup == null &&
+                          selectedGroupLabel === item.label
+                            ? "bg-axoft-500 text-slate-950"
+                            : item.kind === "group" && activeGroup?.id === item.id
+                              ? "bg-axoft-500 text-slate-950"
+                              : "text-slate-200 hover:bg-white/5 hover:text-white"
+                        }`}
+                      >
+                        <span className="truncate">{item.label}</span>
+                        {item.kind === "overall" ? (
+                          <span className="text-[11px] uppercase tracking-[0.2em] opacity-70">
+                            Alles
+                          </span>
+                        ) : null}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-3 py-4 text-sm text-slate-400">
+                      Geen groepen gevonden.
+                    </div>
+                  )}
+                </div>
               </div>
             ) : null}
           </div>
+
+          <div className="relative shrink-0 pt-0.5" ref={actionMenuRef}>
+            <button
+              type="button"
+              onClick={() => setActionMenuOpen((prev) => !prev)}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-lg text-slate-300 transition hover:border-white/20 hover:text-white"
+              aria-label="Groep acties"
+            >
+              ⋮
+            </button>
+
+            {actionMenuOpen ? (
+              <div className="absolute right-0 z-30 mt-2 w-48 overflow-hidden rounded-2xl border border-white/15 bg-slate-950 p-1 shadow-2xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionMenuOpen(false);
+                    setJoinCreateTab("join");
+                    setJoinCreateOpen(true);
+                  }}
+                  className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
+                >
+                  Groep joinen
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionMenuOpen(false);
+                    setJoinCreateTab("create");
+                    setJoinCreateOpen(true);
+                  }}
+                  className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
+                >
+                  Groep aanmaken
+                </button>
+                {activeGroup ? (
+                  <>
+                    <div className="my-1 h-px bg-white/10" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActionMenuOpen(false);
+                        setDangerAction(activeIsOwner ? "delete" : "leave");
+                      }}
+                      className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-rose-200 transition hover:bg-rose-500/10 hover:text-rose-100"
+                    >
+                      {activeIsOwner ? "Groep verwijderen" : "Groep verlaten"}
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <nav className="flex-1 space-y-1 overflow-hidden px-2 py-4 sm:px-3">
+        <NavLink
+          to="/"
+          end
+          onClick={() => {
+            if (isMobile) closeAllMenus();
+          }}
+          className={({ isActive }) =>
+            `flex items-center rounded-2xl px-3 py-3 text-sm font-medium transition ${
+              isActive
+                ? "bg-axoft-500 text-slate-950"
+                : "text-slate-200 hover:bg-white/5 hover:text-white"
+            }`
+          }
+        >
+          Dashboard
+        </NavLink>
+
+        {groupNavLinks.map((link) => (
+          <NavLink
+            key={link.to}
+            to={link.to}
+            onClick={(event) => {
+              if (!activeGroup) {
+                event.preventDefault();
+                return;
+              }
+              if (isMobile) closeAllMenus();
+            }}
+            className={({ isActive }) =>
+              `flex items-center rounded-2xl px-3 py-3 text-sm transition ${
+                activeGroup
+                  ? isActive
+                    ? "bg-axoft-500 text-slate-950"
+                    : "text-slate-200 hover:bg-white/5 hover:text-white"
+                  : "cursor-not-allowed text-slate-500 opacity-50"
+              }`
+            }
+            title={
+              activeGroup
+                ? undefined
+                : "Selecteer eerst een groep om deze pagina te openen"
+            }
+          >
+            {link.label}
+          </NavLink>
+        ))}
+      </nav>
+
+      <div className="relative border-t border-white/10 px-3 py-4 sm:px-4" ref={accountMenuRef}>
+        <button
+          type="button"
+          onClick={() => setAccountMenuOpen((prev) => !prev)}
+          className="flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-left transition hover:border-white/20 hover:bg-white/[0.07]"
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-axoft-500 text-sm font-semibold text-slate-950">
+            {getInitials(user?.displayName ?? user?.email ?? "P")}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium text-white">
+              {user?.displayName ?? "Mijn account"}
+            </p>
+            <p className="truncate text-xs text-slate-400">
+              {user?.email ?? "Ingelogd"}
+            </p>
+          </div>
+          <span className="text-xs text-slate-400">▾</span>
+        </button>
+
+        {accountMenuOpen ? (
+          <div className="mt-2 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/98 p-1 shadow-2xl">
+            <button
+              type="button"
+              onClick={() => {
+                setAccountMenuOpen(false);
+                setProfileOpen(true);
+              }}
+              className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-slate-200 transition hover:bg-white/5 hover:text-white"
+            >
+              Profiel aanpassen
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAccountMenuOpen(false);
+                void logout();
+              }}
+              className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-rose-200 transition hover:bg-rose-500/10 hover:text-rose-100"
+            >
+              Uitloggen
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </>
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 lg:h-screen lg:overflow-hidden">
+      <div className="mx-auto max-w-[1600px] lg:grid lg:h-screen lg:grid-cols-[280px_minmax(0,1fr)]">
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          className="sticky top-0 z-20 flex w-full items-center justify-between border-b border-white/10 bg-slate-950/95 px-4 py-3 text-left lg:hidden"
+        >
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-[0.35em] text-axoft-200">
+              PingPong Scores
+            </p>
+            <p className="truncate text-sm font-medium text-white">
+              {selectedGroupLabel}
+            </p>
+          </div>
+          <span className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-lg text-slate-200">
+            ☰
+          </span>
+        </button>
+
+        <aside className="hidden flex-col border-b border-white/10 bg-slate-950/95 lg:flex lg:h-full lg:overflow-hidden lg:border-b-0 lg:border-r">
+          {renderSidebarContent(false)}
         </aside>
 
         <main className="min-w-0 p-4 sm:p-6 lg:h-full lg:overflow-y-auto lg:p-8">
           <Outlet />
         </main>
       </div>
+
+      {mobileNavOpen ? (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+            aria-label="Navigatie sluiten"
+            onClick={() => setMobileNavOpen(false)}
+          />
+          <aside className="absolute left-0 top-0 h-full w-[88vw] max-w-sm overflow-hidden border-r border-white/10 bg-slate-950 shadow-2xl">
+            <div className="flex h-full flex-col">
+              <div className="flex items-center justify-between border-b border-white/5 px-4 py-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.35em] text-axoft-200">
+                    Navigatie
+                  </p>
+                  <p className="mt-1 text-sm text-slate-400">
+                    {selectedGroupLabel}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileNavOpen(false)}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-lg text-slate-200"
+                  aria-label="Sluiten"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                {renderSidebarContent(true)}
+              </div>
+            </div>
+          </aside>
+        </div>
+      ) : null}
 
       <Modal
         open={joinCreateOpen}
