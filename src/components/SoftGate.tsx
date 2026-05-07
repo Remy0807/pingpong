@@ -80,11 +80,12 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
     const storedGroupId = localStorage.getItem("pp_active_group_id");
     const nextGroupId =
       (storedGroupId &&
-        session.groups.some((group) => group.id === storedGroupId) &&
+      session.groups.some((group) => group.id === storedGroupId) &&
         storedGroupId) ||
       session.activeGroupId ||
       "";
     setSelectedGroupId(nextGroupId);
+    setActiveGroupId(nextGroupId || null);
   };
 
   useEffect(() => {
@@ -254,6 +255,7 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
         joinCode: joinCode.trim(),
       });
       setSelectedGroupId(result.group.id);
+      setActiveGroupId(result.group.id);
       localStorage.setItem("pp_active_group_id", result.group.id);
       await refreshSession();
     } catch (createError) {
@@ -279,6 +281,7 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
         joinCode: joinCode.trim(),
       });
       setSelectedGroupId(result.group.id);
+      setActiveGroupId(result.group.id);
       localStorage.setItem("pp_active_group_id", result.group.id);
       await refreshSession();
     } catch (joinError) {
@@ -460,6 +463,7 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
       const result = await createPortalGroup(payload);
       await refreshSession();
       setSelectedGroupId(result.group.id);
+      setActiveGroupId(result.group.id);
       localStorage.setItem("pp_active_group_id", result.group.id);
       return result;
     },
@@ -467,11 +471,13 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
       const result = await joinPortalGroup(payload);
       await refreshSession();
       setSelectedGroupId(result.group.id);
+      setActiveGroupId(result.group.id);
       localStorage.setItem("pp_active_group_id", result.group.id);
       return result;
     },
     selectGroup: async (groupId) => {
       setSelectedGroupId(groupId);
+      setActiveGroupId(groupId);
       localStorage.setItem("pp_active_group_id", groupId);
       await refreshSession();
     },

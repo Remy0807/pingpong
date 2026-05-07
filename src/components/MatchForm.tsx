@@ -46,6 +46,16 @@ type MatchFormProps = SingleMatchFormProps | MultiMatchFormProps;
 
 const defaultPoints = { playerOnePoints: 11, playerTwoPoints: 7 };
 
+const isValidSinglesScore = (playerOnePoints: number, playerTwoPoints: number) => {
+  if (playerOnePoints === playerTwoPoints) {
+    return false;
+  }
+
+  const winnerScore = Math.max(playerOnePoints, playerTwoPoints);
+  const loserScore = Math.min(playerOnePoints, playerTwoPoints);
+  return winnerScore >= 11 && winnerScore - loserScore >= 2;
+};
+
 const createScoreRow = (id: number): ScoreRow => ({
   id,
   ...defaultPoints,
@@ -169,8 +179,8 @@ export function MatchForm({
           },
         ];
 
-    if (matches.some((match) => match.playerOnePoints === match.playerTwoPoints)) {
-      setError("Een potje kan niet in een gelijkspel eindigen.");
+    if (matches.some((match) => !isValidSinglesScore(match.playerOnePoints, match.playerTwoPoints))) {
+      setError("Een 1v1-potje moet minstens 11 punten halen en met 2 punten verschil gewonnen worden.");
       return;
     }
 
@@ -278,9 +288,7 @@ export function MatchForm({
           className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
         />
         <p className="text-xs text-slate-500">
-          Standaard wordt de huidige tijd ingevuld. Pas aan indien nodig of
-          verwijder de waarde om nu te gebruiken. Bewerk een bestaande wedstrijd
-          om een foutief moment te corrigeren.
+          Een 1v1-potje moet minstens 11 punten halen en met 2 punten verschil gewonnen worden.
         </p>
       </div>
 

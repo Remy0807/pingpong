@@ -30,6 +30,16 @@ type DoublesMatchFormProps = {
 
 const defaultPoints = { teamOnePoints: 11, teamTwoPoints: 7 };
 
+const isValidDoublesScore = (teamOnePoints: number, teamTwoPoints: number) => {
+  if (teamOnePoints === teamTwoPoints) {
+    return false;
+  }
+
+  const winnerScore = Math.max(teamOnePoints, teamTwoPoints);
+  const loserScore = Math.min(teamOnePoints, teamTwoPoints);
+  return winnerScore >= 21 && winnerScore - loserScore >= 2;
+};
+
 const toDateTimeLocal = (value: Date | string | undefined) => {
   if (!value) {
     return "";
@@ -125,8 +135,8 @@ export function DoublesMatchForm({
       return;
     }
 
-    if (teamOnePoints === teamTwoPoints) {
-      setError("Een potje kan niet in een gelijkspel eindigen.");
+    if (!isValidDoublesScore(teamOnePoints, teamTwoPoints)) {
+      setError("Een 2v2-potje moet minstens 21 punten halen en met 2 punten verschil gewonnen worden.");
       return;
     }
 
@@ -217,6 +227,9 @@ export function DoublesMatchForm({
           onChange={(event) => setPlayedAt(event.target.value)}
           className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
         />
+        <p className="text-xs text-slate-500">
+          Een 2v2-potje moet minstens 21 punten halen en met 2 punten verschil gewonnen worden.
+        </p>
       </label>
 
       <div className="grid gap-4 lg:grid-cols-2">

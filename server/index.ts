@@ -1094,6 +1094,46 @@ const validateDoublesPlayerIds = (playerIds: number[]) => {
   return null;
 };
 
+const validateSinglesScore = (
+  playerOnePoints: number,
+  playerTwoPoints: number
+) => {
+  if (playerOnePoints === playerTwoPoints) {
+    return "Een potje eindigt altijd met een winnaar.";
+  }
+
+  const winnerScore = Math.max(playerOnePoints, playerTwoPoints);
+  const loserScore = Math.min(playerOnePoints, playerTwoPoints);
+  if (winnerScore < 11) {
+    return "Een 1v1-potje moet minstens 11 punten halen.";
+  }
+  if (winnerScore - loserScore < 2) {
+    return "Een 1v1-potje moet met 2 punten verschil gewonnen worden.";
+  }
+
+  return null;
+};
+
+const validateDoublesScore = (
+  teamOnePoints: number,
+  teamTwoPoints: number
+) => {
+  if (teamOnePoints === teamTwoPoints) {
+    return "Een potje eindigt altijd met een winnaar.";
+  }
+
+  const winnerScore = Math.max(teamOnePoints, teamTwoPoints);
+  const loserScore = Math.min(teamOnePoints, teamTwoPoints);
+  if (winnerScore < 21) {
+    return "Een 2v2-potje moet minstens 21 punten halen.";
+  }
+  if (winnerScore - loserScore < 2) {
+    return "Een 2v2-potje moet met 2 punten verschil gewonnen worden.";
+  }
+
+  return null;
+};
+
 // Helper to compute Elo deltas per match grouped by season
 const computeEloDeltas = (matches: MatchWithRelations[]) => {
   const BASE_RATING = 1000;
@@ -2185,16 +2225,15 @@ app.post("/api/matches", async (req, res, next) => {
       .json({ message: "Een speler kan niet tegen zichzelf spelen." });
   }
 
-  if (playerOnePoints === playerTwoPoints) {
-    return res
-      .status(400)
-      .json({ message: "Een potje eindigt altijd met een winnaar." });
-  }
-
   if (playerOnePoints < 0 || playerTwoPoints < 0) {
     return res
       .status(400)
       .json({ message: "Scores kunnen niet negatief zijn." });
+  }
+
+  const scoreError = validateSinglesScore(playerOnePoints, playerTwoPoints);
+  if (scoreError) {
+    return res.status(400).json({ message: scoreError });
   }
 
   try {
@@ -2286,16 +2325,18 @@ app.patch("/api/matches/:id", async (req, res, next) => {
         .json({ message: "Een speler kan niet tegen zichzelf spelen." });
     }
 
-    if (nextPlayerOnePoints === nextPlayerTwoPoints) {
-      return res
-        .status(400)
-        .json({ message: "Een potje eindigt altijd met een winnaar." });
-    }
-
     if (nextPlayerOnePoints < 0 || nextPlayerTwoPoints < 0) {
       return res
         .status(400)
         .json({ message: "Scores kunnen niet negatief zijn." });
+    }
+
+    const scoreError = validateSinglesScore(
+      nextPlayerOnePoints,
+      nextPlayerTwoPoints
+    );
+    if (scoreError) {
+      return res.status(400).json({ message: scoreError });
     }
 
     const [playerOne, playerTwo] = await Promise.all([
@@ -2435,16 +2476,15 @@ app.post("/api/doubles-matches", async (req, res, next) => {
     return res.status(400).json({ message: validationError });
   }
 
-  if (teamOnePoints === teamTwoPoints) {
-    return res
-      .status(400)
-      .json({ message: "Een potje eindigt altijd met een winnaar." });
-  }
-
   if (teamOnePoints < 0 || teamTwoPoints < 0) {
     return res
       .status(400)
       .json({ message: "Scores kunnen niet negatief zijn." });
+  }
+
+  const scoreError = validateDoublesScore(teamOnePoints, teamTwoPoints);
+  if (scoreError) {
+    return res.status(400).json({ message: scoreError });
   }
 
   try {
@@ -2550,16 +2590,18 @@ app.patch("/api/doubles-matches/:id", async (req, res, next) => {
       return res.status(400).json({ message: validationError });
     }
 
-    if (nextTeamOnePoints === nextTeamTwoPoints) {
-      return res
-        .status(400)
-        .json({ message: "Een potje eindigt altijd met een winnaar." });
-    }
-
     if (nextTeamOnePoints < 0 || nextTeamTwoPoints < 0) {
       return res
         .status(400)
         .json({ message: "Scores kunnen niet negatief zijn." });
+    }
+
+    const scoreError = validateDoublesScore(
+      nextTeamOnePoints,
+      nextTeamTwoPoints
+    );
+    if (scoreError) {
+      return res.status(400).json({ message: scoreError });
     }
 
     const players = await store.getPlayersByIds(context.groupId, playerIds);
