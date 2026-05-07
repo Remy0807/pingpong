@@ -439,7 +439,7 @@ export function DashboardPage() {
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div className="space-y-3">
                 <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
-                  Jouw overzicht
+                  Mijn account
                 </p>
                 <h2 className="text-3xl font-semibold text-white">
                   Goed om je weer te zien, {accountOverview.user.displayName ?? accountOverview.user.email ?? "speler"}.
@@ -590,9 +590,9 @@ export function DashboardPage() {
           </div>
 
           <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-5 shadow-card">
-            <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
-              Groepen
-            </p>
+              <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
+                Mijn groepen
+              </p>
             <h3 className="mt-2 text-xl font-semibold text-white">
               Waar je actief bent
             </h3>
@@ -666,7 +666,7 @@ export function DashboardPage() {
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="space-y-3">
               <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
-                Mijn dashboard
+                Mijn groep
               </p>
               <h2 className="text-3xl font-semibold text-white">
                 Goed om je weer te zien, {currentPlayerLabel}.

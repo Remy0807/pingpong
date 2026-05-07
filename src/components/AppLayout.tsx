@@ -6,8 +6,7 @@ import { deletePortalGroup, leavePortalGroup } from "../lib/api";
 
 const groupNavLinks = [
   { to: "/matches", label: "Wedstrijden" },
-  { to: "/members", label: "Leden" },
-  { to: "/players", label: "Standen" },
+  { to: "/members", label: "Groepsbeheer" },
   { to: "/doubles", label: "2v2" },
   { to: "/head-to-head", label: "Head-to-head" },
   { to: "/recommendations", label: "Aanbevolen" },
@@ -241,6 +240,14 @@ export function AppLayout() {
         <p className="text-xs uppercase tracking-[0.35em] text-axoft-200">
           PingPong Scores
         </p>
+        <div className="mt-4">
+          <p className="mb-2 text-[10px] uppercase tracking-[0.4em] text-slate-500">
+            Mijn groep
+          </p>
+          <div className="text-sm text-slate-400">
+            Selecteer een groep of open het overzicht over al je accounts.
+          </div>
+        </div>
         <div className="mt-3 flex items-center gap-2">
           <div className="relative min-w-0 flex-1" ref={groupMenuRef}>
             <button
@@ -367,6 +374,9 @@ export function AppLayout() {
       </div>
 
       <nav className="flex-1 space-y-1 overflow-hidden px-2 py-4 sm:px-3">
+        <div className="px-3 pb-2 pt-1 text-[10px] uppercase tracking-[0.4em] text-slate-500">
+          Navigatie
+        </div>
         <NavLink
           to="/"
           end
@@ -416,6 +426,9 @@ export function AppLayout() {
       </nav>
 
       <div className="relative border-t border-white/10 px-3 py-4 sm:px-4" ref={accountMenuRef}>
+        <div className="mb-2 px-1 text-[10px] uppercase tracking-[0.4em] text-slate-500">
+          Mijn account
+        </div>
         <button
           type="button"
           onClick={() => setAccountMenuOpen((prev) => !prev)}

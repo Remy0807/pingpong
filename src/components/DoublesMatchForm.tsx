@@ -29,6 +29,12 @@ type DoublesMatchFormProps = {
 };
 
 const defaultPoints = { teamOnePoints: 11, teamTwoPoints: 7 };
+const scorePresets = [
+  { label: "21-19", teamOnePoints: 21, teamTwoPoints: 19 },
+  { label: "22-20", teamOnePoints: 22, teamTwoPoints: 20 },
+  { label: "25-23", teamOnePoints: 25, teamTwoPoints: 23 },
+  { label: "28-26", teamOnePoints: 28, teamTwoPoints: 26 },
+];
 
 const isValidDoublesScore = (teamOnePoints: number, teamTwoPoints: number) => {
   if (teamOnePoints === teamTwoPoints) {
@@ -182,6 +188,26 @@ export function DoublesMatchForm({
     setTeamTwoPoints(teamOnePoints);
   };
 
+  const renderScorePresets = (
+    applyPreset: (teamOnePoints: number, teamTwoPoints: number) => void
+  ) => (
+    <div className="flex flex-wrap gap-2">
+      <span className="mr-1 text-[11px] uppercase tracking-[0.25em] text-slate-500">
+        Snel
+      </span>
+      {scorePresets.map((preset) => (
+        <button
+          key={preset.label}
+          type="button"
+          onClick={() => applyPreset(preset.teamOnePoints, preset.teamTwoPoints)}
+          className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-axoft-400 hover:text-white"
+        >
+          {preset.label}
+        </button>
+      ))}
+    </div>
+  );
+
   const renderSelect = (
     label: string,
     value: number | null,
@@ -283,6 +309,13 @@ export function DoublesMatchForm({
             className="w-full rounded-lg border border-white/10 bg-slate-950/40 px-4 py-3 text-sm focus:border-axoft-400 focus:outline-none focus:ring-2 focus:ring-axoft-500/40 transition"
           />
         </label>
+      </div>
+
+      <div className="rounded-lg border border-white/10 bg-slate-950/30 p-3">
+        {renderScorePresets((teamOne, teamTwo) => {
+          setTeamOnePoints(teamOne);
+          setTeamTwoPoints(teamTwo);
+        })}
       </div>
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
