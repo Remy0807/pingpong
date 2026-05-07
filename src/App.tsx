@@ -26,6 +26,7 @@ import type { DoublesMatch, Match, PlayerStats, SeasonSummary } from "./types";
 import { AppLayout } from "./components/AppLayout";
 import { DashboardPage } from "./pages/DashboardPage";
 import { MatchesPage } from "./pages/MatchesPage";
+import { MembersPage } from "./pages/MembersPage";
 import { PlayersPage } from "./pages/PlayersPage";
 import { HeadToHeadPage } from "./pages/HeadToHeadPage";
 import { RecommendationsPage } from "./pages/RecommendationsPage";
@@ -411,6 +412,7 @@ function PortalAwareApp() {
         <Route path="/" element={<AppLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="matches" element={<MatchesPage />} />
+          <Route path="members" element={<MembersPage />} />
           <Route path="doubles" element={<DoublesPage />} />
           <Route path="players" element={<PlayersPage />} />
           <Route path="players/:id" element={<PlayerProfilePage />} />
