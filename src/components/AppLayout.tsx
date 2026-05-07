@@ -250,7 +250,7 @@ export function AppLayout() {
                 </button>
 
                 {groupMenuOpen ? (
-                  <div className="absolute z-30 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-slate-900/98 p-2 shadow-2xl backdrop-blur">
+                  <div className="absolute left-0 top-full z-30 mt-2 w-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950 p-2 shadow-2xl backdrop-blur">
                     <input
                       ref={groupQueryInputRef}
                       value={groupQuery}
