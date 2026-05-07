@@ -9,7 +9,9 @@ import {
   getFirestore,
   Timestamp,
   type DocumentData,
+  type CollectionReference,
   type Firestore,
+  type Query,
   type QueryDocumentSnapshot,
 } from "firebase-admin/firestore";
 import { randomUUID } from "node:crypto";
@@ -554,6 +556,56 @@ class FirebaseStore {
       .doc(`${groupId}:${uid}`)
       .delete();
     return membership;
+  }
+
+  private async deleteCollectionDocs(
+    collectionPath: CollectionReference<DocumentData> | Query<DocumentData>
+  ) {
+    const snapshot = await collectionPath.get();
+    if (snapshot.empty) {
+      return;
+    }
+
+    const batches: FirebaseFirestore.WriteBatch[] = [];
+    let batch = this.db.batch();
+    let count = 0;
+
+    for (const doc of snapshot.docs) {
+      batch.delete(doc.ref);
+      count += 1;
+      if (count === 450) {
+        batches.push(batch);
+        batch = this.db.batch();
+        count = 0;
+      }
+    }
+
+    if (count > 0) {
+      batches.push(batch);
+    }
+
+    for (const currentBatch of batches) {
+      await currentBatch.commit();
+    }
+  }
+
+  async deleteGroup(groupId: string) {
+    const group = await this.getGroup(groupId);
+    if (!group) {
+      throw new FirebaseNotFoundError("Groep niet gevonden.");
+    }
+
+    await Promise.all([
+      this.deleteCollectionDocs(this.portalCollection("memberships").where("groupId", "==", groupId)),
+      this.deleteCollectionDocs(this.groupCollection(groupId, "players")),
+      this.deleteCollectionDocs(this.groupCollection(groupId, "matches")),
+      this.deleteCollectionDocs(this.groupCollection(groupId, "doublesMatches")),
+      this.deleteCollectionDocs(this.groupCollection(groupId, "seasons")),
+      this.deleteCollectionDocs(this.groupCollection(groupId, "_meta")),
+    ]);
+
+    await this.portalCollection("groups").doc(groupId).delete();
+    return group;
   }
 
   async getPortalSession(

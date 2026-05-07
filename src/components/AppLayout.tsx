@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { Modal } from "./Modal";
 import { usePortal } from "../context/PortalContext";
+import { deletePortalGroup, leavePortalGroup } from "../lib/api";
 
 const groupNavLinks = [
   { to: "/matches", label: "Wedstrijden" },
@@ -37,6 +38,7 @@ export function AppLayout() {
     memberships,
     selectGroup,
     selectOverall,
+    refreshSession,
     createGroup,
     joinGroup,
     updateDisplayName,
@@ -50,6 +52,8 @@ export function AppLayout() {
   const [joinCreateOpen, setJoinCreateOpen] = useState(false);
   const [joinCreateTab, setJoinCreateTab] = useState<"join" | "create">("join");
   const [profileOpen, setProfileOpen] = useState(false);
+  const [dangerAction, setDangerAction] = useState<"leave" | "delete" | null>(null);
+  const [dangerBusy, setDangerBusy] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [joinCodeDraft, setJoinCodeDraft] = useState("");
   const [groupNameDraft, setGroupNameDraft] = useState("");
@@ -70,6 +74,11 @@ export function AppLayout() {
     () => groups.filter((group) => joinedGroupIds.has(group.id)),
     [groups, joinedGroupIds],
   );
+  const activeMembership = useMemo(
+    () => memberships.find((membership) => membership.groupId === activeGroup?.id) ?? null,
+    [activeGroup?.id, memberships],
+  );
+  const activeIsOwner = activeMembership?.role === "owner";
 
   const selectedGroupLabel = activeGroup?.name ?? "Overal statistieken";
 
@@ -196,16 +205,37 @@ export function AppLayout() {
     }
   };
 
+  const handleDangerAction = async () => {
+    if (!activeGroup) {
+      return;
+    }
+
+    setDangerBusy(true);
+    try {
+      if (dangerAction === "leave") {
+        await leavePortalGroup(activeGroup.id);
+      } else if (dangerAction === "delete") {
+        await deletePortalGroup(activeGroup.id);
+      }
+      setDangerAction(null);
+      setActionMenuOpen(false);
+      await selectOverall();
+      await refreshSession();
+    } finally {
+      setDangerBusy(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto grid min-h-screen max-w-[1600px] lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="flex flex-col border-b border-white/10 bg-slate-950/95 lg:h-screen lg:border-b-0 lg:border-r">
+    <div className="min-h-screen bg-slate-950 text-slate-100 lg:h-screen lg:overflow-hidden">
+      <div className="mx-auto grid min-h-screen max-w-[1600px] lg:h-screen lg:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="flex flex-col border-b border-white/10 bg-slate-950/95 lg:h-full lg:overflow-hidden lg:border-b-0 lg:border-r">
           <div className="relative border-b border-white/5 px-4 py-4 sm:px-5">
             <p className="text-xs uppercase tracking-[0.35em] text-axoft-200">
               PingPong Scores
             </p>
             <div className="mt-3 flex items-center gap-2">
-              <div className="min-w-0 flex-1" ref={groupMenuRef}>
+              <div className="relative min-w-0 flex-1" ref={groupMenuRef}>
                 <button
                   type="button"
                   onClick={() => setGroupMenuOpen((prev) => !prev)}
@@ -281,7 +311,7 @@ export function AppLayout() {
                 </button>
 
                 {actionMenuOpen ? (
-                  <div className="absolute right-0 z-30 mt-2 w-48 overflow-hidden rounded-2xl border border-white/10 bg-slate-900/98 p-1 shadow-2xl">
+                  <div className="absolute right-0 z-30 mt-2 w-48 overflow-hidden rounded-2xl border border-white/15 bg-slate-950 p-1 shadow-2xl">
                     <button
                       type="button"
                       onClick={() => {
@@ -304,13 +334,28 @@ export function AppLayout() {
                     >
                       Groep aanmaken
                     </button>
+                    {activeGroup ? (
+                      <>
+                        <div className="my-1 h-px bg-white/10" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActionMenuOpen(false);
+                            setDangerAction(activeIsOwner ? "delete" : "leave");
+                          }}
+                          className="w-full rounded-xl px-3 py-2.5 text-left text-sm text-rose-200 transition hover:bg-rose-500/10 hover:text-rose-100"
+                        >
+                          {activeIsOwner ? "Groep verwijderen" : "Groep verlaten"}
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
             </div>
           </div>
 
-          <nav className="flex-1 space-y-1 px-2 py-4 sm:px-3">
+          <nav className="flex-1 space-y-1 overflow-hidden px-2 py-4 sm:px-3">
             <NavLink
               to="/"
               end
@@ -401,7 +446,7 @@ export function AppLayout() {
           </div>
         </aside>
 
-        <main className="min-w-0 p-4 sm:p-6 lg:p-8">
+        <main className="min-w-0 p-4 sm:p-6 lg:h-full lg:overflow-y-auto lg:p-8">
           <Outlet />
         </main>
       </div>
@@ -533,6 +578,37 @@ export function AppLayout() {
             className="flex-1 rounded-2xl bg-axoft-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-axoft-400 disabled:opacity-60"
           >
             {profileBusy ? "Opslaan..." : "Opslaan"}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={dangerAction != null}
+        onClose={() => setDangerAction(null)}
+        title={dangerAction === "delete" ? "Groep verwijderen" : "Groep verlaten"}
+        description={
+          dangerAction === "delete"
+            ? `Weet je zeker dat je ${activeGroup?.name ?? "deze groep"} wilt verwijderen? Deze actie verwijdert de groep en alle bijbehorende wedstrijden, standen en leden.`
+            : `Weet je zeker dat je ${activeGroup?.name ?? "deze groep"} wilt verlaten?`
+        }
+        size="sm"
+        footer={null}
+      >
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => setDangerAction(null)}
+            className="flex-1 rounded-2xl border border-white/10 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:border-white/20 hover:text-white"
+          >
+            Annuleren
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleDangerAction()}
+            disabled={dangerBusy}
+            className="flex-1 rounded-2xl bg-rose-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-rose-400 disabled:opacity-60"
+          >
+            {dangerBusy ? "Bezig..." : dangerAction === "delete" ? "Verwijderen" : "Verlaten"}
           </button>
         </div>
       </Modal>

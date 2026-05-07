@@ -213,6 +213,12 @@ export function updatePortalGroup(
   );
 }
 
+export function deletePortalGroup(groupId: string) {
+  return request<void>(`/api/portal/groups/${groupId}`, {
+    method: "DELETE",
+  });
+}
+
 export function removePortalGroupMember(groupId: string, uid: string) {
   return request<void>(`/api/portal/groups/${groupId}/members/${uid}`, {
     method: "DELETE",

@@ -1615,6 +1615,29 @@ app.patch("/api/portal/groups/:groupId", async (req, res, next) => {
   }
 });
 
+app.delete("/api/portal/groups/:groupId", async (req, res, next) => {
+  try {
+    const user = getFirebaseUserInfo(req as AuthedRequest);
+    if (!user) {
+      return res.status(401).json({ message: "Inloggen vereist." });
+    }
+
+    const { groupId } = req.params;
+    const membership = await store.getMembership(user.uid, groupId);
+    if (!membership) {
+      return res.status(403).json({ message: "Je hebt geen toegang tot deze groep." });
+    }
+    if (membership.role !== "owner") {
+      return res.status(403).json({ message: "Alleen de eigenaar kan de groep verwijderen." });
+    }
+
+    await store.deleteGroup(groupId);
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.delete("/api/portal/groups/:groupId/members/:uid", async (req, res, next) => {
   try {
     const user = getFirebaseUserInfo(req as AuthedRequest);
