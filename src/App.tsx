@@ -34,7 +34,7 @@ import { RivalryPage } from "./pages/RivalryPage";
 import { DoublesPage } from "./pages/DoublesPage";
 import { usePortal } from "./context/PortalContext";
 
-export default function App() {
+function PortalAwareApp() {
   const { activeGroupId } = usePortal();
   const [players, setPlayers] = useState<PlayerStats[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -364,25 +364,31 @@ export default function App() {
   );
 
   return (
+    <AppDataProvider value={contextValue}>
+      <Routes>
+        <Route path="/" element={<AppLayout />}>
+          <Route index element={<DashboardPage />} />
+          <Route path="matches" element={<MatchesPage />} />
+          <Route path="doubles" element={<DoublesPage />} />
+          <Route path="players" element={<PlayersPage />} />
+          <Route path="players/:id" element={<PlayerProfilePage />} />
+          <Route path="head-to-head" element={<HeadToHeadPage />} />
+          <Route path="recommendations" element={<RecommendationsPage />} />
+          <Route path="elo-simulator" element={<EloSimulatorPage />} />
+          <Route path="wall-of-shame" element={<WallOfShamePage />} />
+          <Route path="rivalries/:playerAId/:playerBId" element={<RivalryPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </AppDataProvider>
+  );
+}
+
+export default function App() {
+  return (
     <BrowserRouter>
       <SoftGate>
-        <AppDataProvider value={contextValue}>
-          <Routes>
-            <Route path="/" element={<AppLayout />}>
-              <Route index element={<DashboardPage />} />
-              <Route path="matches" element={<MatchesPage />} />
-              <Route path="doubles" element={<DoublesPage />} />
-              <Route path="players" element={<PlayersPage />} />
-              <Route path="players/:id" element={<PlayerProfilePage />} />
-              <Route path="head-to-head" element={<HeadToHeadPage />} />
-              <Route path="recommendations" element={<RecommendationsPage />} />
-              <Route path="elo-simulator" element={<EloSimulatorPage />} />
-              <Route path="wall-of-shame" element={<WallOfShamePage />} />
-              <Route path="rivalries/:playerAId/:playerBId" element={<RivalryPage />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          </Routes>
-        </AppDataProvider>
+        <PortalAwareApp />
       </SoftGate>
     </BrowserRouter>
   );
