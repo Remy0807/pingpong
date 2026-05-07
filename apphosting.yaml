@@ -2,3 +2,8 @@ runConfig:
   maxInstances: 2
   cpu: 1
   memoryMiB: 512
+
+# Optional example:
+# env:
+#   - variable: VITE_FIREBASE_WEBAPP_CONFIG
+#     value: '{"apiKey":"...","authDomain":"...","projectId":"...","appId":"..."}'

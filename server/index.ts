@@ -5,6 +5,8 @@ import express, {
   type Response,
 } from "express";
 import cors from "cors";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
 import {
   createPlayerBadge,
@@ -23,6 +25,7 @@ const app = express();
 const PORT = Number(process.env.PORT) || 4000;
 const TEAMS_WEBHOOK_URL = process.env.TEAMS_WEBHOOK_URL;
 const adminAuth = getAuth();
+const distDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../");
 
 type StoreErrorWithCode = { code: string };
 
@@ -2252,11 +2255,11 @@ app.get("/api/recommendations", async (req, res, next) => {
 });
 
 // Serve static files from the dist directory after API routes.
-app.use(express.static("dist"));
+app.use(express.static(distDir));
 
 // Handle SPA routing - send all non-API requests to index.html.
 app.get(/^(?!\/api\/)/, (_req, res) => {
-  res.sendFile("index.html", { root: "dist" });
+  res.sendFile("index.html", { root: distDir });
 });
 
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {

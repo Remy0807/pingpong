@@ -11,7 +11,8 @@ project without a separate Cloud Run service or `firebase.json` rewrite setup.
 - `package.json` with `build` and `start` scripts
 - `apphosting.yaml` in the repo root
 - a Firebase project with Firestore enabled
-- optional environment values in the App Hosting backend config
+- Firebase Authentication enabled with the Email/Password provider
+- one client config variable, usually `VITE_FIREBASE_WEBAPP_CONFIG`
 
 ### Environment values
 
@@ -19,9 +20,12 @@ For local development and fallback use:
 
 - `VITE_API_BASE_URL=http://localhost:4000`
 - `PORT=4000`
+- `VITE_FIREBASE_WEBAPP_CONFIG={"apiKey":"...","authDomain":"...","projectId":"...","appId":"..."}`
 - `FIREBASE_SERVICE_ACCOUNT_BASE64=...` or `FIREBASE_SERVICE_ACCOUNT=...`
 
-For Firebase App Hosting, you can usually rely on the platform credentials and
-only add custom values such as `TEAMS_WEBHOOK_URL` if you use them.
+For Firebase App Hosting, you can usually rely on the platform credentials for
+the server side. In practice, the only client value you normally set is
+`VITE_FIREBASE_WEBAPP_CONFIG`, plus anything extra like `TEAMS_WEBHOOK_URL` if
+you use it.
 
 The database starts empty. Add players and matches from the app UI.

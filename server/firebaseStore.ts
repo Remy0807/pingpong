@@ -144,17 +144,22 @@ const initializeFirebase = () => {
   }
 
   const serviceAccount = parseServiceAccount();
-  const options: AppOptions = {
-    projectId: process.env.FIREBASE_PROJECT_ID,
-  };
-
   if (serviceAccount) {
-    options.credential = cert(serviceAccount);
+    const options: AppOptions = {
+      credential: cert(serviceAccount),
+      projectId: process.env.FIREBASE_PROJECT_ID ?? serviceAccount.project_id,
+    };
+    initializeApp(options);
   } else if (!process.env.FIRESTORE_EMULATOR_HOST) {
-    options.credential = applicationDefault();
+    initializeApp({
+      credential: applicationDefault(),
+      projectId: process.env.FIREBASE_PROJECT_ID,
+    });
+  } else {
+    initializeApp({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+    });
   }
-
-  initializeApp(options);
 };
 
 initializeFirebase();
