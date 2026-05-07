@@ -125,6 +125,22 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
     emailRef.current?.focus();
   }, [authMode, authReady]);
 
+  useEffect(() => {
+    if (ready) {
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
+      return;
+    }
+
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.documentElement.style.overflow = "";
+      document.body.style.overflow = "";
+    };
+  }, [ready]);
+
   const handleLogin = async () => {
     setBusy(true);
     setError(null);
@@ -289,9 +305,9 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
       {ready ? (
         children
       ) : !portalSession ? (
-        <div className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-6 lg:p-8">
-          <div className="mx-auto grid min-h-[calc(100vh-2rem)] w-full max-w-7xl overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950 shadow-2xl lg:grid-cols-2">
-            <div className="relative min-h-[260px] lg:min-h-full">
+        <div className="fixed inset-0 overflow-hidden bg-slate-950 p-3 text-slate-100 sm:p-4 lg:p-6">
+          <div className="mx-auto grid h-full w-full max-w-7xl overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950 shadow-2xl lg:grid-cols-2">
+            <div className="relative min-h-[220px] lg:min-h-full">
               <img
                 src="/brand/pingpong-login-hero.png"
                 alt="Pingpong tafel met bat en bal"
@@ -299,24 +315,24 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
               />
               <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(2,6,23,0.12)_0%,rgba(2,6,23,0.35)_52%,rgba(2,6,23,0.78)_100%)]" />
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.18),transparent_40%),radial-gradient(circle_at_bottom_right,rgba(239,68,68,0.18),transparent_35%)]" />
-              <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8 lg:p-10">
+              <div className="absolute inset-x-0 bottom-0 p-5 sm:p-6 lg:p-10">
                 <p className="text-xs uppercase tracking-[0.6em] text-axoft-100/80">
                   PingPong Scores
                 </p>
-                <h1 className="mt-3 max-w-lg text-3xl font-semibold leading-tight text-white sm:text-4xl xl:text-5xl">
+                <h1 className="mt-3 max-w-lg text-2xl font-semibold leading-tight text-white sm:text-4xl xl:text-5xl">
                   Houd de tafelcompetitie strak, snel en overzichtelijk.
                 </h1>
               </div>
             </div>
 
-            <div className="flex items-center justify-center p-6 sm:p-8 lg:p-12">
+            <div className="flex h-full items-center justify-center overflow-hidden p-4 sm:p-6 lg:p-10">
               <div className="w-full max-w-md">
-                <div className="mb-8 flex items-center justify-between">
+                <div className="mb-6 flex items-center justify-between gap-4">
                   <div>
                     <p className="text-xs uppercase tracking-[0.5em] text-axoft-200">
                       PingPong Scores
                     </p>
-                    <h2 className="mt-3 text-2xl font-semibold text-white">
+                    <h2 className="mt-2 text-2xl font-semibold text-white">
                       {authMode === "login" ? "Inloggen" : "Account maken"}
                     </h2>
                   </div>
@@ -426,8 +442,8 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
               </button>
             </div>
 
-            <div className="mt-6 grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+                <div className="mt-5 grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-4 sm:p-5">
                 <div className="inline-flex rounded-full border border-white/10 bg-slate-900/80 p-1">
                   <button
                     type="button"
@@ -454,7 +470,7 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
                 </div>
 
                 {groupMode === "join" ? (
-                  <div className="mt-5 space-y-3">
+                  <div className="mt-4 space-y-3">
                     <select
                       value={selectedGroupId}
                       onChange={(e) => setSelectedGroupId(e.target.value)}
@@ -511,13 +527,13 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
                 )}
 
                 {error ? (
-                  <p className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                  <p className="mt-3 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
                     {error}
                   </p>
                 ) : null}
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
                 <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
                   Jouw groepen
                 </p>
