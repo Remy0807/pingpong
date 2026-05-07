@@ -288,30 +288,46 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
     <PortalProvider value={contextValue}>
       {ready ? (
         children
-      ) : (
-        <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4">
-          <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-slate-900/90 p-6 text-slate-100 shadow-2xl">
-            {!portalSession ? (
-              <>
-                <p className="text-xs uppercase tracking-[0.5em] text-axoft-200">
+      ) : !portalSession ? (
+        <div className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-6 lg:p-8">
+          <div className="mx-auto grid min-h-[calc(100vh-2rem)] w-full max-w-7xl overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950 shadow-2xl lg:grid-cols-2">
+            <div className="relative min-h-[260px] lg:min-h-full">
+              <img
+                src="/brand/pingpong-login-hero.png"
+                alt="Pingpong tafel met bat en bal"
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+              <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(2,6,23,0.12)_0%,rgba(2,6,23,0.35)_52%,rgba(2,6,23,0.78)_100%)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(20,184,166,0.18),transparent_40%),radial-gradient(circle_at_bottom_right,rgba(239,68,68,0.18),transparent_35%)]" />
+              <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8 lg:p-10">
+                <p className="text-xs uppercase tracking-[0.6em] text-axoft-100/80">
                   PingPong Scores
                 </p>
-                <h1 className="mt-3 text-2xl font-semibold text-white">
-                  Log in of maak een account
+                <h1 className="mt-3 max-w-lg text-3xl font-semibold leading-tight text-white sm:text-4xl xl:text-5xl">
+                  Houd de tafelcompetitie strak, snel en overzichtelijk.
                 </h1>
-                <p className="mt-2 text-sm text-slate-300">
-                  Toegang tot je groep, je statistieken en je wedstrijden via Firebase Auth.
-                </p>
+              </div>
+            </div>
 
-                <div className="mt-6 grid gap-4 md:grid-cols-2">
-                  <div className="space-y-3 rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+            <div className="flex items-center justify-center p-6 sm:p-8 lg:p-12">
+              <div className="w-full max-w-md">
+                <div className="mb-8 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.5em] text-axoft-200">
+                      PingPong Scores
+                    </p>
+                    <h2 className="mt-3 text-2xl font-semibold text-white">
+                      {authMode === "login" ? "Inloggen" : "Account maken"}
+                    </h2>
+                  </div>
+                  <div className="inline-flex rounded-full border border-white/10 bg-white/5 p-1">
                     <button
                       type="button"
                       onClick={() => setAuthMode("login")}
-                      className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+                      className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
                         authMode === "login"
                           ? "bg-axoft-500 text-slate-950"
-                          : "border border-white/10 text-slate-200"
+                          : "text-slate-300 hover:text-white"
                       }`}
                     >
                       Inloggen
@@ -319,232 +335,227 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
                     <button
                       type="button"
                       onClick={() => setAuthMode("register")}
-                      className={`ml-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+                      className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
                         authMode === "register"
                           ? "bg-axoft-500 text-slate-950"
-                          : "border border-white/10 text-slate-200"
+                          : "text-slate-300 hover:text-white"
                       }`}
                     >
-                      Account maken
+                      Account
                     </button>
-
-                    <div className="space-y-3 pt-2">
-                      <input
-                        ref={emailRef}
-                        type="email"
-                        autoComplete="email"
-                        value={authEmail}
-                        onChange={(e) => setAuthEmail(e.target.value)}
-                        placeholder="E-mailadres"
-                        className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
-                      />
-                      <input
-                        type="password"
-                        autoComplete="current-password"
-                        value={authPassword}
-                        onChange={(e) => setAuthPassword(e.target.value)}
-                        placeholder="Wachtwoord"
-                        className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
-                      />
-                      {authMode === "register" ? (
-                        <input
-                          type="text"
-                          value={displayName}
-                          onChange={(e) => setDisplayName(e.target.value)}
-                          placeholder="Weergavenaam"
-                          className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
-                        />
-                      ) : null}
-                      {error ? (
-                        <p className="text-sm text-rose-300">{error}</p>
-                      ) : null}
-                      <div className="flex flex-wrap gap-3">
-                        <button
-                          type="button"
-                          onClick={authMode === "login" ? handleLogin : handleRegister}
-                          disabled={busy}
-                          className="rounded-xl bg-axoft-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-60"
-                        >
-                          {busy ? "Bezig..." : authMode === "login" ? "Inloggen" : "Account maken"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleResetPassword}
-                          disabled={busy}
-                          className="rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-slate-200 disabled:opacity-60"
-                        >
-                          Wachtwoord reset
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4 text-sm text-slate-300">
-                    <p className="text-white font-semibold">Wat gebeurt hierna?</p>
-                    <ul className="mt-3 space-y-2">
-                      <li>Je logt in met Firebase Auth.</li>
-                      <li>Je kiest een bestaande groep of maakt een nieuwe.</li>
-                      <li>Je dashboard toont alleen de data van die groep.</li>
-                    </ul>
                   </div>
                 </div>
-              </>
-            ) : (
-              <>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.5em] text-axoft-200">
-                      Groepen
+
+                <div className="space-y-4 rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-inner shadow-black/20 backdrop-blur">
+                  <input
+                    ref={emailRef}
+                    type="email"
+                    autoComplete="email"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="E-mailadres"
+                    className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-axoft-400"
+                  />
+                  <input
+                    type="password"
+                    autoComplete={authMode === "login" ? "current-password" : "new-password"}
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="Wachtwoord"
+                    className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-axoft-400"
+                  />
+                  {authMode === "register" ? (
+                    <input
+                      type="text"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      placeholder="Naam"
+                      className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-axoft-400"
+                    />
+                  ) : null}
+                  {error ? (
+                    <p className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                      {error}
                     </p>
-                    <h2 className="mt-3 text-2xl font-semibold text-white">
-                      Kies of maak een groep
-                    </h2>
-                    <p className="mt-2 text-sm text-slate-300">
-                      Ingelogd als {portalSession.user.displayName ?? portalSession.user.email}
-                    </p>
+                  ) : null}
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={authMode === "login" ? handleLogin : handleRegister}
+                      disabled={busy}
+                      className="flex-1 rounded-2xl bg-axoft-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-axoft-400 disabled:opacity-60"
+                    >
+                      {busy ? "Bezig..." : authMode === "login" ? "Inloggen" : "Account maken"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetPassword}
+                      disabled={busy}
+                      className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:border-white/20 hover:text-white disabled:opacity-60"
+                    >
+                      Reset
+                    </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="min-h-screen bg-slate-950 p-4 text-slate-100 sm:p-6 lg:p-8">
+          <div className="mx-auto w-full max-w-5xl rounded-[2rem] border border-white/10 bg-slate-950/95 p-6 shadow-2xl sm:p-8 lg:p-10">
+            <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.5em] text-axoft-200">
+                  Groepen
+                </p>
+                <h2 className="mt-3 text-2xl font-semibold text-white">
+                  Maak of kies een groep
+                </h2>
+                <p className="mt-2 text-sm text-slate-400">
+                  Ingelogd als {portalSession.user.displayName ?? portalSession.user.email}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={busy}
+                className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:border-white/20 hover:text-white disabled:opacity-60"
+              >
+                Uitloggen
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+                <div className="inline-flex rounded-full border border-white/10 bg-slate-900/80 p-1">
                   <button
                     type="button"
-                    onClick={handleLogout}
-                    disabled={busy}
-                    className="rounded-xl border border-white/10 px-4 py-3 text-sm font-semibold text-slate-200 disabled:opacity-60"
+                    onClick={() => setGroupMode("join")}
+                    className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                      groupMode === "join"
+                        ? "bg-axoft-500 text-slate-950"
+                        : "text-slate-300 hover:text-white"
+                    }`}
                   >
-                    Uitloggen
+                    Bestaande groep
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGroupMode("create")}
+                    className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                      groupMode === "create"
+                        ? "bg-axoft-500 text-slate-950"
+                        : "text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    Nieuwe groep
                   </button>
                 </div>
 
-                <div className="mt-6 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-                  <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setGroupMode("join")}
-                        className={`rounded-lg px-3 py-2 text-sm font-semibold ${
-                          groupMode === "join"
-                            ? "bg-axoft-500 text-slate-950"
-                            : "border border-white/10 text-slate-200"
-                        }`}
-                      >
-                        Bestaande groep
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setGroupMode("create")}
-                        className={`rounded-lg px-3 py-2 text-sm font-semibold ${
-                          groupMode === "create"
-                            ? "bg-axoft-500 text-slate-950"
-                            : "border border-white/10 text-slate-200"
-                        }`}
-                      >
-                        Nieuwe groep
-                      </button>
-                    </div>
-
-                    {groupMode === "join" ? (
-                      <div className="mt-4 space-y-3">
-                        <label className="block text-xs uppercase tracking-[0.3em] text-slate-400">
-                          Kies groep
-                        </label>
-                        <select
-                          value={selectedGroupId}
-                          onChange={(e) => setSelectedGroupId(e.target.value)}
-                          className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
-                        >
-                          <option value="">Selecteer een groep</option>
-                          {portalSession.groups.map((group) => (
-                            <option key={group.id} value={group.id}>
-                              {group.name}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="text"
-                          value={joinCode}
-                          onChange={(e) => setJoinCode(e.target.value)}
-                          placeholder="Geheime code"
-                          className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleJoinGroup}
-                          disabled={busy}
-                          className="rounded-xl bg-axoft-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-60"
-                        >
-                          {busy ? "Bezig..." : "Groep joinen"}
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="mt-4 space-y-3">
-                        <input
-                          type="text"
-                          value={groupName}
-                          onChange={(e) => setGroupName(e.target.value)}
-                          placeholder="Groepsnaam, bijvoorbeeld Axoft"
-                          className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
-                        />
-                        <input
-                          type="text"
-                          value={joinCode}
-                          onChange={(e) => setJoinCode(e.target.value)}
-                          placeholder="Geheime join-code"
-                          className="w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 py-3 text-sm text-white outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleCreateGroup}
-                          disabled={busy}
-                          className="rounded-xl bg-axoft-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-60"
-                        >
-                          {busy ? "Bezig..." : "Groep maken"}
-                        </button>
-                      </div>
-                    )}
-                    {error ? (
-                      <p className="mt-3 text-sm text-rose-300">{error}</p>
-                    ) : null}
+                {groupMode === "join" ? (
+                  <div className="mt-5 space-y-3">
+                    <select
+                      value={selectedGroupId}
+                      onChange={(e) => setSelectedGroupId(e.target.value)}
+                      className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-white outline-none transition focus:border-axoft-400"
+                    >
+                      <option value="">Selecteer een groep</option>
+                      {portalSession.groups.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={joinCode}
+                      onChange={(e) => setJoinCode(e.target.value)}
+                      placeholder="Geheime code"
+                      className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-axoft-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleJoinGroup}
+                      disabled={busy}
+                      className="w-full rounded-2xl bg-axoft-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-axoft-400 disabled:opacity-60"
+                    >
+                      {busy ? "Bezig..." : "Groep joinen"}
+                    </button>
                   </div>
+                ) : (
+                  <div className="mt-5 space-y-3">
+                    <input
+                      type="text"
+                      value={groupName}
+                      onChange={(e) => setGroupName(e.target.value)}
+                      placeholder="Groepsnaam"
+                      className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-axoft-400"
+                    />
+                    <input
+                      type="text"
+                      value={joinCode}
+                      onChange={(e) => setJoinCode(e.target.value)}
+                      placeholder="Geheime code"
+                      className="w-full rounded-2xl border border-white/10 bg-slate-900/90 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-axoft-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCreateGroup}
+                      disabled={busy}
+                      className="w-full rounded-2xl bg-axoft-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-axoft-400 disabled:opacity-60"
+                    >
+                      {busy ? "Bezig..." : "Groep maken"}
+                    </button>
+                  </div>
+                )}
 
-                  <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
-                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                      Bestaande groepen
+                {error ? (
+                  <p className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+                    {error}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
+                  Jouw groepen
+                </p>
+                <div className="mt-4 space-y-2">
+                  {portalSession.groups.length ? (
+                    portalSession.groups.map((group) => (
+                      <button
+                        key={group.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedGroupId(group.id);
+                          setGroupMode("join");
+                        }}
+                        className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                          selectedGroupId === group.id
+                            ? "border-axoft-400 bg-axoft-500/10 text-white"
+                            : "border-white/10 text-slate-200 hover:border-white/20"
+                        }`}
+                      >
+                        <span>{group.name}</span>
+                        <span className="text-xs text-slate-400">
+                          {group.memberCount} leden
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-400">
+                      Nog geen groepen gevonden.
                     </p>
-                    <div className="mt-4 space-y-2">
-                      {portalSession.groups.length ? (
-                        portalSession.groups.map((group) => (
-                          <button
-                            key={group.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedGroupId(group.id);
-                              setGroupMode("join");
-                            }}
-                            className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition ${
-                              selectedGroupId === group.id
-                                ? "border-axoft-400 bg-axoft-500/10 text-white"
-                                : "border-white/10 text-slate-200 hover:border-axoft-400/60"
-                            }`}
-                          >
-                            <span>{group.name}</span>
-                            <span className="text-xs text-slate-400">
-                              {group.memberCount} leden
-                            </span>
-                          </button>
-                        ))
-                      ) : (
-                        <p className="text-sm text-slate-400">
-                          Er zijn nog geen groepen.
-                        </p>
-                      )}
-                    </div>
-                    {activeGroup ? (
-                      <p className="mt-4 text-sm text-slate-300">
-                        Actieve groep: <span className="text-white">{activeGroup.name}</span>
-                      </p>
-                    ) : null}
-                  </div>
+                  )}
                 </div>
-              </>
-            )}
+                {activeGroup ? (
+                  <p className="mt-4 text-sm text-slate-300">
+                    Actief: <span className="text-white">{activeGroup.name}</span>
+                  </p>
+                ) : null}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -553,4 +564,3 @@ export function SoftGate({ children }: { children: React.ReactNode }) {
 }
 
 export default SoftGate;
-
