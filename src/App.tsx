@@ -29,6 +29,8 @@ import { AppLayout } from "./components/AppLayout";
 import { DashboardPage } from "./pages/DashboardPage";
 import { MatchesPage } from "./pages/MatchesPage";
 import { MembersPage } from "./pages/MembersPage";
+import { StandingsPage } from "./pages/StandingsPage";
+import { TiersPage } from "./pages/TiersPage";
 import { PlayersPage } from "./pages/PlayersPage";
 import { HeadToHeadPage } from "./pages/HeadToHeadPage";
 import { RecommendationsPage } from "./pages/RecommendationsPage";
@@ -427,6 +429,8 @@ function PortalAwareApp() {
         <Route path="/" element={<AppLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="matches" element={<MatchesPage />} />
+          <Route path="standings" element={<StandingsPage />} />
+          <Route path="tiers" element={<TiersPage />} />
           <Route path="members" element={<MembersPage />} />
           <Route path="doubles" element={<DoublesPage />} />
           <Route path="players" element={<PlayersPage />} />

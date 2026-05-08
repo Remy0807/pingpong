@@ -6,12 +6,10 @@ import { deletePortalGroup, leavePortalGroup } from "../lib/api";
 
 const groupNavLinks = [
   { to: "/matches", label: "Wedstrijden" },
+  { to: "/standings", label: "Standen" },
+  { to: "/tiers", label: "Rangen" },
   { to: "/members", label: "Groepsbeheer" },
   { to: "/doubles", label: "2v2" },
-  { to: "/head-to-head", label: "Head-to-head" },
-  { to: "/recommendations", label: "Aanbevolen" },
-  { to: "/elo-simulator", label: "Elo simulator" },
-  { to: "/wall-of-shame", label: "Wall of Shame" },
 ];
 
 function getInitials(name: string) {

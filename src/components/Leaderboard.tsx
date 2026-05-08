@@ -13,6 +13,10 @@ export type LeaderboardEntry = {
   winRate: number;
   pointDifferential: number;
   rating?: number;
+  ratingLabel?: string;
+  secondaryRating?: number;
+  secondaryRatingLabel?: string;
+  tierLabel?: string;
   ratingTrend?: number[];
 };
 
@@ -79,6 +83,13 @@ export function Leaderboard({ entries }: LeaderboardProps) {
             <h3 className="mt-4 text-xl font-semibold text-white">
               {entry.player.name}
             </h3>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {entry.tierLabel ? (
+                <span className="rounded-full border border-axoft-300/30 bg-axoft-500/10 px-3 py-1 text-xs font-semibold text-axoft-100">
+                  {entry.tierLabel}
+                </span>
+              ) : null}
+            </div>
             {entry.ratingTrend && entry.ratingTrend.length > 1 ? (
               <div className="mt-2 text-xs text-axoft-200/70">
                 <Sparkline values={entry.ratingTrend} />
@@ -87,13 +98,19 @@ export function Leaderboard({ entries }: LeaderboardProps) {
             <dl className="mt-6 grid grid-cols-2 gap-4 text-sm text-slate-300">
               <div>
                 <dt className="text-xs uppercase tracking-widest text-axoft-200/70">
-                  ELO
+                  {entry.ratingLabel ?? "ELO"}
                 </dt>
                 <dd className="text-lg font-semibold text-white">
                   {typeof entry.rating === "number"
                     ? numberFormatter.format(entry.rating)
                     : "-"}
                 </dd>
+                {typeof entry.secondaryRating === "number" ? (
+                  <p className="mt-1 text-xs text-slate-400">
+                    {entry.secondaryRatingLabel ?? "Elo"}:{" "}
+                    {numberFormatter.format(entry.secondaryRating)}
+                  </p>
+                ) : null}
               </div>
               <div>
                 <dt className="text-xs uppercase tracking-widest text-axoft-200/70">
@@ -154,16 +171,27 @@ export function Leaderboard({ entries }: LeaderboardProps) {
                         {percentageFormatter.format(entry.winRate)}
                       </span>
                     </header>
+                    {entry.tierLabel ? (
+                      <div className="mt-2">
+                        <span className="rounded-full border border-axoft-300/30 bg-axoft-500/10 px-3 py-1 text-[0.7rem] font-semibold text-axoft-100">
+                          {entry.tierLabel}
+                        </span>
+                      </div>
+                    ) : null}
                     <dl className="mt-2 grid grid-cols-[repeat(3,minmax(0,1fr))] gap-2">
                       <div>
                         <dt className="uppercase tracking-widest text-slate-500">
-                          Elo
+                          {entry.ratingLabel ?? "Elo"}
                         </dt>
                         <dd className="text-sm font-semibold text-white">
-                          {typeof entry.rating === "number"
-                            ? entry.rating
-                            : "-"}
+                          {typeof entry.rating === "number" ? entry.rating : "-"}
                         </dd>
+                        {typeof entry.secondaryRating === "number" ? (
+                          <p className="mt-1 text-[0.7rem] text-slate-500">
+                            {entry.secondaryRatingLabel ?? "Elo"}:{" "}
+                            {entry.secondaryRating}
+                          </p>
+                        ) : null}
                       </div>
                       <div>
                         <dt className="uppercase tracking-widest text-slate-500">
@@ -200,7 +228,10 @@ export function Leaderboard({ entries }: LeaderboardProps) {
             <thead className="bg-white/5 text-xs uppercase tracking-widest text-axoft-200">
               <tr>
                 <th className="px-4 py-3 text-left">Speler</th>
-                <th className="px-4 py-3 text-left">Elo</th>
+                <th className="px-4 py-3 text-left">Tier</th>
+                <th className="px-4 py-3 text-left">
+                  {entries[0]?.ratingLabel ?? "Elo"}
+                </th>
                 <th className="px-4 py-3 text-left">Potjes</th>
                 <th className="px-4 py-3 text-left">Winsten</th>
                 <th className="px-4 py-3 text-left">Verlies</th>
@@ -217,7 +248,24 @@ export function Leaderboard({ entries }: LeaderboardProps) {
                     {entry.player.name}
                   </td>
                   <td className="px-4 py-3 text-slate-200">
-                    {typeof entry.rating === "number" ? entry.rating : "-"}
+                    {entry.tierLabel ? (
+                      <span className="rounded-full border border-axoft-300/30 bg-axoft-500/10 px-3 py-1 text-xs font-semibold text-axoft-100">
+                        {entry.tierLabel}
+                      </span>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-slate-200">
+                    <div className="font-semibold text-white">
+                      {typeof entry.rating === "number" ? entry.rating : "-"}
+                    </div>
+                    {typeof entry.secondaryRating === "number" ? (
+                      <div className="mt-1 text-xs text-slate-500">
+                        {entry.secondaryRatingLabel ?? "Elo"}:{" "}
+                        {entry.secondaryRating}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-slate-200">{entry.matches}</td>
                   <td className="px-4 py-3 text-emerald-300">{entry.wins}</td>
@@ -225,9 +273,7 @@ export function Leaderboard({ entries }: LeaderboardProps) {
                   <td className="px-4 py-3 text-slate-200">
                     {percentageFormatter.format(entry.winRate)}
                   </td>
-                  <td className="px-4 py-3 text-slate-200">
-                    {entry.pointsFor}
-                  </td>
+                  <td className="px-4 py-3 text-slate-200">{entry.pointsFor}</td>
                   <td className="px-4 py-3 text-slate-200">
                     {entry.pointsAgainst}
                   </td>

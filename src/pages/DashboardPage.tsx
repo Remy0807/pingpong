@@ -1,402 +1,126 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { BadgeLegend } from "../components/BadgeLegend";
-import { DoublesLeaderboardTable } from "../components/DoublesLeaderboardTable";
-import { Leaderboard, type LeaderboardEntry } from "../components/Leaderboard";
-import { MatchesTable } from "../components/MatchesTable";
+import { useMemo } from "react";
+import { Link } from "react-router-dom";
 import { Sparkline } from "../components/Sparkline";
-import { SeasonOverview } from "../components/SeasonOverview";
-import { SeasonHighlightCard } from "../components/SeasonHighlightCard";
 import { useAppData } from "../context/AppDataContext";
 import { usePortal } from "../context/PortalContext";
-import {
-  buildDoublesPlayerLeaderboard,
-  buildDoublesSummary,
-  buildDoublesTeamLeaderboard,
-  calculateDoublesEloSnapshot,
-  filterDoublesMatchesByScope,
-} from "../lib/doubles";
-import { buildMatchInsights, isBlowoutMatch } from "../lib/matchInsights";
 
-function useCountUp(target: number, duration = 650) {
-  const [value, setValue] = useState(target);
-  const latestValueRef = useRef(target);
+const dateFormatter = new Intl.DateTimeFormat("nl-NL", {
+  day: "2-digit",
+  month: "short",
+});
 
-  useEffect(() => {
-    latestValueRef.current = value;
-  }, [value]);
-
-  useEffect(() => {
-    if (
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      setValue(target);
-      latestValueRef.current = target;
-      return;
-    }
-
-    const from = latestValueRef.current;
-    const to = target;
-    if (from === to) {
-      return;
-    }
-
-    let frameId = 0;
-    let startedAt = 0;
-
-    const step = (now: number) => {
-      if (!startedAt) {
-        startedAt = now;
-      }
-      const progress = Math.min((now - startedAt) / duration, 1);
-      const next = Math.round(from + (to - from) * progress);
-      setValue(next);
-      latestValueRef.current = next;
-
-      if (progress < 1) {
-        frameId = window.requestAnimationFrame(step);
-      } else {
-        setValue(to);
-        latestValueRef.current = to;
-      }
-    };
-
-    frameId = window.requestAnimationFrame(step);
-    return () => window.cancelAnimationFrame(frameId);
-  }, [target, duration]);
-
-  return value;
+function formatSigned(value: number) {
+  return `${value >= 0 ? "+" : ""}${value}`;
 }
 
-type AchievementEvent = {
-  id: string;
-  at: string;
-  title: string;
+function DashboardCard({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string | number;
   detail: string;
-  tone: "axoft" | "emerald" | "amber" | "rose";
-};
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+      <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">
+        {label}
+      </p>
+      <p className="mt-2 text-3xl font-semibold text-white">{value}</p>
+      <p className="mt-1 text-sm text-slate-400">{detail}</p>
+    </div>
+  );
+}
+
+function MatchMiniList({
+  title,
+  items,
+  emptyText,
+  moreTo,
+}: {
+  title: string;
+  items: Array<{
+    id: string | number;
+    title: string;
+    subtitle: string;
+    score: string;
+    won?: boolean;
+  }>;
+  emptyText: string;
+  moreTo: string;
+}) {
+  return (
+    <section className="rounded-3xl border border-white/10 bg-slate-950/50 p-5 shadow-card">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
+            Resultaten
+          </p>
+          <h3 className="mt-2 text-xl font-semibold text-white">{title}</h3>
+        </div>
+        <Link
+          to={moreTo}
+          className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-axoft-400 hover:text-white"
+        >
+          Meer
+        </Link>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {items.length ? (
+          items.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm"
+            >
+              <div>
+                <p className="font-medium text-white">{item.title}</p>
+                <p className="text-xs text-slate-400">{item.subtitle}</p>
+              </div>
+              <div
+                className={`text-sm font-semibold ${
+                  item.won == null
+                    ? "text-white"
+                    : item.won
+                      ? "text-emerald-300"
+                      : "text-rose-300"
+                }`}
+              >
+                {item.score}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/40 p-4 text-sm text-slate-400">
+            {emptyText}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
 
 export function DashboardPage() {
-  const { players, matches, doublesMatches, seasons, currentSeasonId, accountOverview } =
+  const { players, matches, doublesMatches, accountOverview, groupMembers } =
     useAppData();
-  const { user, activeGroup } = usePortal();
-  const [overviewRange, setOverviewRange] = useState<1 | 3 | 6 | 12>(1);
+  const { user, activeGroup, selectGroup } = usePortal();
 
-  const [selectedScope, setSelectedScope] = useState<"overall" | number>(
-    "overall",
-  );
-  const initializedScope = useRef(false);
-
-  useEffect(() => {
-    if (!initializedScope.current && currentSeasonId != null) {
-      setSelectedScope(currentSeasonId);
-      initializedScope.current = true;
-    }
-  }, [currentSeasonId]);
-
-  useEffect(() => {
-    if (
-      typeof selectedScope === "number" &&
-      seasons.length > 0 &&
-      seasons.every((season) => season.id !== selectedScope)
-    ) {
-      setSelectedScope(currentSeasonId ?? "overall");
-    }
-  }, [currentSeasonId, seasons, selectedScope]);
-
-  const selectedSeason = useMemo(() => {
-    if (typeof selectedScope !== "number") {
-      return null;
-    }
-    return seasons.find((season) => season.id === selectedScope) ?? null;
-  }, [selectedScope, seasons]);
-
-  const seasonMatches = useMemo(() => {
-    if (typeof selectedScope !== "number") {
-      return [];
-    }
-    return matches
-      .filter((match) => match.season?.id === selectedScope)
-      .sort(
-        (a, b) =>
-          new Date(a.playedAt).getTime() - new Date(b.playedAt).getTime(),
-      );
-  }, [matches, selectedScope]);
-
-  const ratingTrends = useMemo(() => {
-    if (typeof selectedScope !== "number") {
-      return new Map<number, number[]>();
-    }
-
-    const BASE_RATING = 1000;
-    const K = 32;
-
-    const playerRatings = new Map<number, number>();
-    const history = new Map<number, number[]>();
-
-    const calculateDelta = (Ra: number, Rb: number, scoreA: number) => {
-      const expectedA = 1 / (1 + 10 ** ((Rb - Ra) / 400));
-      return Math.round(K * (scoreA - expectedA));
-    };
-
-    seasonMatches.forEach((match) => {
-      const p1 = match.playerOneId;
-      const p2 = match.playerTwoId;
-
-      const currentRatingOne = playerRatings.get(p1) ?? BASE_RATING;
-      const currentRatingTwo = playerRatings.get(p2) ?? BASE_RATING;
-
-      const scoreOne = match.winnerId === p1 ? 1 : 0;
-      const scoreTwo = 1 - scoreOne;
-
-      const deltaOne =
-        match.playerOneEloDelta ??
-        calculateDelta(currentRatingOne, currentRatingTwo, scoreOne);
-      const deltaTwo =
-        match.playerTwoEloDelta ??
-        calculateDelta(currentRatingTwo, currentRatingOne, scoreTwo);
-
-      const nextRatingOne = currentRatingOne + deltaOne;
-      const nextRatingTwo = currentRatingTwo + deltaTwo;
-
-      if (!history.has(p1)) {
-        history.set(p1, [currentRatingOne]);
-      }
-      if (!history.has(p2)) {
-        history.set(p2, [currentRatingTwo]);
-      }
-
-      history.get(p1)!.push(nextRatingOne);
-      history.get(p2)!.push(nextRatingTwo);
-
-      playerRatings.set(p1, nextRatingOne);
-      playerRatings.set(p2, nextRatingTwo);
-    });
-
-    return history;
-  }, [seasonMatches, selectedScope]);
-
-  const leaderboardEntries = useMemo<LeaderboardEntry[]>(() => {
-    if (selectedScope === "overall") {
-      return players.map((entry) => ({
-        player: {
-          id: entry.player.id,
-          name: entry.player.name,
-        },
-        wins: entry.wins,
-        losses: entry.losses,
-        matches: entry.matches,
-        pointsFor: entry.pointsFor,
-        pointsAgainst: entry.pointsAgainst,
-        winRate: entry.winRate,
-        pointDifferential: entry.pointDifferential,
-      }));
-    }
-
-    const season = seasons.find((season) => season.id === selectedScope);
-    if (!season) {
-      return [];
-    }
-
-    return season.standings.map((standing) => ({
-      player: standing.player,
-      wins: standing.wins,
-      losses: standing.losses,
-      matches: standing.matches,
-      pointsFor: standing.pointsFor,
-      pointsAgainst: standing.pointsAgainst,
-      winRate: standing.winRate,
-      pointDifferential: standing.pointDifferential,
-      rating: standing.rating,
-      ratingTrend: ratingTrends.get(standing.player.id),
-    }));
-  }, [players, seasons, selectedScope, ratingTrends]);
-
-  const seasonHighlight = useMemo(() => {
-    if (typeof selectedScope !== "number") {
-      return null;
-    }
-    if (!seasonMatches.length) {
-      return null;
-    }
-
-    return seasonMatches.reduce<{
-      match: (typeof seasonMatches)[number];
-      total: number;
-    } | null>((best, match) => {
-      const total = match.playerOnePoints + match.playerTwoPoints;
-      if (!best || total > best.total) {
-        return { match, total };
-      }
-      return best;
-    }, null);
-  }, [seasonMatches, selectedScope]);
-
-  const stats = useMemo(() => {
-    const activePlayers = leaderboardEntries.filter(
-      (entry) => entry.matches > 0,
-    );
-    const bestWinRate = activePlayers.length
-      ? [...activePlayers].sort((a, b) => b.winRate - a.winRate)[0]
-      : undefined;
-    const mostMatches = leaderboardEntries.length
-      ? [...leaderboardEntries].sort((a, b) => b.matches - a.matches)[0]
-      : undefined;
-    const bestDifferential = leaderboardEntries.length
-      ? [...leaderboardEntries].sort(
-          (a, b) => b.pointDifferential - a.pointDifferential,
-        )[0]
-      : undefined;
-
-    return { bestWinRate, mostMatches, bestDifferential };
-  }, [leaderboardEntries]);
-
-  const recentMatches = useMemo(
-    () =>
-      [...matches]
-        .sort(
-          (a, b) =>
-            new Date(b.playedAt).getTime() - new Date(a.playedAt).getTime(),
-        )
-        .slice(0, 5),
-    [matches],
-  );
-
-  const scopedDoublesMatches = useMemo(
-    () =>
-      [...filterDoublesMatchesByScope(doublesMatches, selectedScope)].sort(
-        (a, b) =>
-          new Date(b.playedAt).getTime() - new Date(a.playedAt).getTime(),
-      ),
-    [doublesMatches, selectedScope],
-  );
-
-  const doublesEloSnapshot = useMemo(
-    () => calculateDoublesEloSnapshot(scopedDoublesMatches),
-    [scopedDoublesMatches],
-  );
-
-  const doublesPlayerLeaderboard = useMemo(
-    () =>
-      buildDoublesPlayerLeaderboard(scopedDoublesMatches, doublesEloSnapshot).slice(0, 5),
-    [scopedDoublesMatches, doublesEloSnapshot],
-  );
-
-  const doublesTeamLeaderboard = useMemo(
-    () =>
-      buildDoublesTeamLeaderboard(scopedDoublesMatches, doublesEloSnapshot).slice(0, 5),
-    [scopedDoublesMatches, doublesEloSnapshot],
-  );
-
-  const doublesSummary = useMemo(
-    () => buildDoublesSummary(scopedDoublesMatches),
-    [scopedDoublesMatches],
-  );
-
-  const achievementEvents = useMemo<AchievementEvent[]>(() => {
-    if (!matches.length) {
-      return [];
-    }
-
-    const events: AchievementEvent[] = [];
-    const sortedAsc = [...matches].sort(
-      (a, b) => new Date(a.playedAt).getTime() - new Date(b.playedAt).getTime(),
-    );
-    const nameById = new Map(
-      players.map((entry) => [entry.player.id, entry.player.name]),
-    );
-    const streakByPlayer = new Map<number, number>();
-    const unlockedMilestones = new Set<string>();
-    const firstBlowoutByWinner = new Set<number>();
-    const insightsByMatch = buildMatchInsights(matches);
-
-    sortedAsc.forEach((match) => {
-      const winnerId = match.winnerId;
-      const loserId =
-        winnerId === match.playerOneId ? match.playerTwoId : match.playerOneId;
-      const winnerName = nameById.get(winnerId) ?? `Speler ${winnerId}`;
-      const loserName = nameById.get(loserId) ?? `Speler ${loserId}`;
-
-      const nextWinnerStreak = (streakByPlayer.get(winnerId) ?? 0) + 1;
-      streakByPlayer.set(winnerId, nextWinnerStreak);
-      streakByPlayer.set(loserId, 0);
-
-      const streakMilestone =
-        nextWinnerStreak === 5 ? 5 : nextWinnerStreak === 3 ? 3 : null;
-      if (streakMilestone != null) {
-        const milestoneKey = `${winnerId}-${streakMilestone}`;
-        if (!unlockedMilestones.has(milestoneKey)) {
-          unlockedMilestones.add(milestoneKey);
-          events.push({
-            id: `streak-${match.id}`,
-            at: match.playedAt,
-            title: `${winnerName} bereikt ${streakMilestone} op rij`,
-            detail: `Streak mijlpaal tegen ${loserName}.`,
-            tone: "emerald",
-          });
-        }
-      }
-
-      if (isBlowoutMatch(match) && !firstBlowoutByWinner.has(winnerId)) {
-        firstBlowoutByWinner.add(winnerId);
-        events.push({
-          id: `blowout-${match.id}`,
-          at: match.playedAt,
-          title: `${winnerName} pakt eerste 11-0`,
-          detail: `${winnerName} versloeg ${loserName} met 11-0.`,
-          tone: "rose",
-        });
-      }
-
-      const insight = insightsByMatch.get(match.id);
-      if (insight?.isUpset && insight.upsetDiff != null) {
-        events.push({
-          id: `upset-${match.id}`,
-          at: match.playedAt,
-          title: `Upset win voor ${winnerName}`,
-          detail: `${loserName} had ${insight.upsetDiff} Elo voordeel.`,
-          tone: "amber",
-        });
-      }
-    });
-
-    return events
-      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-      .slice(0, 8);
-  }, [matches, players]);
-
-  const scopeDescription =
-    selectedScope === "overall"
-      ? "Alle gespeelde wedstrijden"
-      : selectedSeason
-        ? `${selectedSeason.matches} ${
-            selectedSeason.matches === 1 ? "wedstrijd" : "wedstrijden"
-          } in ${selectedSeason.name}`
-        : "Geen seizoensgegevens beschikbaar";
-
-  const handleScopeChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    const value = event.target.value;
-    setSelectedScope(value === "overall" ? "overall" : Number(value));
-  };
-
-  const selectValue =
-    selectedScope === "overall" ? "overall" : String(selectedScope);
-
-  const bestWinRatePercent = stats.bestWinRate
-    ? Math.round(stats.bestWinRate.winRate * 100)
-    : 0;
-  const mostMatchesCount = stats.mostMatches?.matches ?? 0;
-  const bestDifferentialValue = stats.bestDifferential?.pointDifferential ?? 0;
-
-  const animatedBestWinRate = useCountUp(bestWinRatePercent);
-  const animatedMostMatches = useCountUp(mostMatchesCount);
-  const animatedBestDifferential = useCountUp(bestDifferentialValue);
   const currentPlayer = useMemo(
     () => players.find((entry) => entry.player.uid === user?.uid) ?? null,
     [players, user?.uid],
   );
-  const personalMatches = useMemo(() => {
-    if (!currentPlayer) {
+
+  const overviewHistory = accountOverview?.monthlyHistory ?? [];
+  const overviewTotals = accountOverview?.totals ?? null;
+  const overviewCurrentMonth =
+    accountOverview?.currentMonth ?? overviewHistory.at(-1) ?? null;
+  const overviewMatchSeries = useMemo(
+    () => overviewHistory.map((month) => month.matches),
+    [overviewHistory],
+  );
+  const personalSingles = useMemo(() => {
+    if (!activeGroup || !currentPlayer) {
       return [];
     }
 
@@ -410,195 +134,158 @@ export function DashboardPage() {
         (a, b) =>
           new Date(b.playedAt).getTime() - new Date(a.playedAt).getTime(),
       )
-      .slice(0, 5);
-  }, [currentPlayer, matches]);
-  const currentPlayerLabel =
-    currentPlayer?.player.name ?? user?.displayName ?? user?.email ?? "Jij";
+      .slice(0, 3);
+  }, [activeGroup, currentPlayer, matches]);
 
-  const overviewHistory = useMemo(
-    () =>
-      accountOverview?.monthlyHistory.slice(-overviewRange) ?? [],
-    [accountOverview?.monthlyHistory, overviewRange],
-  );
-  const overviewTotals = accountOverview?.totals ?? null;
-  const overviewCurrentMonth = accountOverview?.currentMonth ?? overviewHistory.at(-1) ?? null;
-  const overviewWinrateSeries = useMemo(
-    () => overviewHistory.map((month) => (month.matches ? month.wins / month.matches : 0)),
-    [overviewHistory],
-  );
-  const overviewMatchSeries = useMemo(
-    () => overviewHistory.map((month) => month.matches),
-    [overviewHistory],
-  );
+  const personalDoubles = useMemo(() => {
+    if (!activeGroup || !currentPlayer) {
+      return [];
+    }
+
+    return [...doublesMatches]
+      .filter((match) =>
+        [
+          match.teamOnePlayerAId,
+          match.teamOnePlayerBId,
+          match.teamTwoPlayerAId,
+          match.teamTwoPlayerBId,
+        ].includes(currentPlayer.player.id),
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.playedAt).getTime() - new Date(a.playedAt).getTime(),
+      )
+      .slice(0, 3);
+  }, [activeGroup, currentPlayer, doublesMatches]);
+
+  const recentActivity = useMemo(() => {
+    if (activeGroup) {
+      return [];
+    }
+
+    return accountOverview?.recentMatches.slice(0, 5) ?? [];
+  }, [accountOverview?.recentMatches, activeGroup]);
+
+  const groupSummaries = accountOverview?.groupSummaries ?? [];
+
+  if (!activeGroup && !accountOverview) {
+    return (
+      <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-6 shadow-card">
+        <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
+          Dashboard
+        </p>
+        <h2 className="mt-2 text-3xl font-semibold text-white">
+          Overzicht laden...
+        </h2>
+        <p className="mt-3 text-sm text-slate-300">
+          Even geduld, we halen je accountgegevens op.
+        </p>
+      </div>
+    );
+  }
 
   if (!activeGroup && accountOverview) {
     return (
-      <div className="flex flex-col gap-8">
-        <section className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
-          <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-5 shadow-card">
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div className="space-y-3">
-                <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
-                  Mijn account
-                </p>
-                <h2 className="text-3xl font-semibold text-white">
-                  Goed om je weer te zien, {accountOverview.user.displayName ?? accountOverview.user.email ?? "speler"}.
-                </h2>
-                <p className="max-w-2xl text-sm text-slate-300">
-                  Hier zie je je totale vorm over alle groepen, met een maandfilter,
-                  recente activiteit en een overzicht van waar je het meest speelt.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {([1, 3, 6, 12] as const).map((months) => (
-                  <button
-                    key={months}
-                    type="button"
-                    onClick={() => setOverviewRange(months)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
-                      overviewRange === months
-                        ? "border-axoft-400 bg-axoft-500 text-slate-950"
-                        : "border-white/10 bg-white/5 text-slate-200 hover:border-white/20 hover:text-white"
-                    }`}
-                  >
-                    {months === 1 ? "Deze maand" : `Laatste ${months} mnd`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                  Matches
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-white">
-                  {overviewTotals?.matches ?? 0}
-                </p>
-                <p className="mt-1 text-sm text-slate-400">
-                  {overviewRange === 1
-                    ? "Alleen deze maand"
-                    : "In de gekozen periode"}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                  Winrate
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-white">
-                  {overviewTotals ? `${Math.round(overviewTotals.winRate * 100)}%` : "—"}
-                </p>
-                <p className="mt-1 text-sm text-slate-400">
-                  {overviewCurrentMonth ? overviewCurrentMonth.label : "Over al je groepen"}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                  Punten saldo
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-white">
-                  {overviewTotals
-                    ? `${overviewTotals.pointsFor - overviewTotals.pointsAgainst >= 0 ? "+" : ""}${overviewTotals.pointsFor - overviewTotals.pointsAgainst}`
-                    : "—"}
-                </p>
-                <p className="mt-1 text-sm text-slate-400">Voor minus tegen</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                  Groepen
-                </p>
-                <p className="mt-2 text-3xl font-semibold text-white">
-                  {overviewTotals?.groupsPlayed ?? 0}
-                </p>
-                <p className="mt-1 text-sm text-slate-400">
-                  Waar jij actief bent geweest
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-4 lg:grid-cols-2">
-              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                      Maandgrafiek
-                    </p>
-                    <h3 className="mt-2 text-lg font-semibold text-white">
-                      Matches per maand
-                    </h3>
-                  </div>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
-                    {overviewHistory.length} punten
-                  </span>
-                </div>
-                <Sparkline values={overviewMatchSeries} className="mt-4 h-10 w-full" />
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  {overviewHistory.map((month) => (
-                    <div
-                      key={month.key}
-                      className="rounded-xl border border-white/10 bg-slate-950/60 p-3"
-                    >
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                        {month.label}
-                      </p>
-                      <p className="mt-1 text-lg font-semibold text-white">
-                        {month.matches} matches
-                      </p>
-                      <p className="text-xs text-slate-400">
-                        {month.wins} winst • {month.losses} verlies
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                      Vorm
-                    </p>
-                    <h3 className="mt-2 text-lg font-semibold text-white">
-                      Winrate trend
-                    </h3>
-                  </div>
-                </div>
-                <Sparkline values={overviewWinrateSeries.map((value) => Math.round(value * 100))} className="mt-4 h-10 w-full" />
-                <div className="mt-4 space-y-2">
-                  {accountOverview.recentMatches.map((match) => (
-                    <div
-                      key={match.id}
-                      className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm"
-                    >
-                      <div>
-                        <p className="font-medium text-white">{match.title}</p>
-                        <p className="text-xs text-slate-400">
-                          {match.groupName} · {new Date(match.playedAt).toLocaleDateString("nl-NL", {
-                            day: "2-digit",
-                            month: "short",
-                          })}
-                        </p>
-                      </div>
-                      <div className={`font-semibold ${match.won ? "text-emerald-300" : "text-rose-300"}`}>
-                        {match.scored}-{match.conceded}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+      <div className="space-y-8">
+        <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-6 shadow-card">
+            <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
+              Mijn account
+            </p>
+            <h2 className="mt-2 text-3xl font-semibold text-white">
+              Goed om je weer te zien,{" "}
+              {accountOverview.user.displayName ??
+                accountOverview.user.email ??
+                "speler"}.
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm text-slate-300">
+              Dit is je persoonlijke overzicht over alle groepen. De focus ligt
+              op je totale vorm, je maand en je recente activiteit.
+            </p>
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-5 shadow-card">
-              <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
-                Mijn groepen
-              </p>
+          <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-6 shadow-card">
+            <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
+              Maandtrend
+            </p>
             <h3 className="mt-2 text-xl font-semibold text-white">
-              Waar je actief bent
+              Laatste maanden
             </h3>
+            <Sparkline values={overviewMatchSeries} className="mt-5 h-12 w-full" />
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {overviewHistory.slice(-3).map((month) => (
+                <div
+                  key={month.key}
+                  className="rounded-2xl border border-white/10 bg-slate-900/70 p-3"
+                >
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                    {month.label}
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {month.matches} matches
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {month.wins} winst • {month.losses} verlies
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <DashboardCard
+            label="Matches"
+            value={overviewTotals?.matches ?? 0}
+            detail={
+              overviewCurrentMonth
+                ? `${overviewCurrentMonth.label} actief`
+                : "Geen data"
+            }
+          />
+          <DashboardCard
+            label="Winrate"
+            value={overviewTotals ? `${Math.round(overviewTotals.winRate * 100)}%` : "—"}
+            detail="Over al je groepen"
+          />
+          <DashboardCard
+            label="Punten saldo"
+            value={
+              overviewTotals
+                ? formatSigned(overviewTotals.pointsFor - overviewTotals.pointsAgainst)
+                : "—"
+            }
+            detail="Voor minus tegen"
+          />
+          <DashboardCard
+            label="Groepen"
+            value={overviewTotals?.groupsPlayed ?? 0}
+            detail="Waar je actief bent"
+          />
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+          <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-5 shadow-card">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
+                  Mijn groepen
+                </p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  Waar je nu in speelt
+                </h3>
+              </div>
+              <Link
+                to="/members"
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-axoft-400 hover:text-white"
+              >
+                Groepsbeheer
+              </Link>
+            </div>
+
             <div className="mt-4 space-y-3">
-              {accountOverview.groupSummaries.length ? (
-                accountOverview.groupSummaries.map((groupSummary) => (
+              {groupSummaries.length ? (
+                groupSummaries.map((groupSummary) => (
                   <div
                     key={groupSummary.group.id}
                     className="rounded-2xl border border-white/10 bg-slate-900/70 p-4"
@@ -609,12 +296,13 @@ export function DashboardPage() {
                           {groupSummary.group.name}
                         </p>
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                          {groupSummary.role === "owner" ? "Eigenaar" : "Lid"} · {groupSummary.group.memberCount} leden
+                          {groupSummary.role === "owner" ? "Beheerder" : "Lid"} ·{" "}
+                          {groupSummary.group.memberCount} leden
                         </p>
                       </div>
                       <button
                         type="button"
-                        onClick={() => selectGroup(groupSummary.group.id).catch(console.error)}
+                        onClick={() => void selectGroup(groupSummary.group.id)}
                         className="rounded-full bg-axoft-500 px-3 py-1.5 text-xs font-semibold text-slate-950"
                       >
                         Openen
@@ -637,10 +325,7 @@ export function DashboardPage() {
                         <p className="text-xs text-slate-400">Laatste</p>
                         <p className="truncate text-white">
                           {groupSummary.lastPlayedAt
-                            ? new Date(groupSummary.lastPlayedAt).toLocaleDateString("nl-NL", {
-                                day: "2-digit",
-                                month: "short",
-                              })
+                            ? dateFormatter.format(new Date(groupSummary.lastPlayedAt))
                             : "—"}
                         </p>
                       </div>
@@ -648,8 +333,54 @@ export function DashboardPage() {
                   </div>
                 ))
               ) : (
-                <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/50 p-4 text-sm text-slate-400">
-                  Nog geen groepen gekoppeld. Gebruik de sidebar om een groep te maken of te joinen.
+                <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/40 p-4 text-sm text-slate-400">
+                  Nog geen groepen gekoppeld. Maak of join een groep via de
+                  sidebar.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-5 shadow-card">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
+                  Recente activiteit
+                </p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  Laatste potjes
+                </h3>
+              </div>
+              <Link
+                to="/matches"
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-axoft-400 hover:text-white"
+              >
+                Wedstrijden
+              </Link>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {recentActivity.length ? (
+                recentActivity.map((match) => (
+                  <div
+                    key={match.id}
+                    className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm"
+                  >
+                    <div>
+                      <p className="font-medium text-white">{match.title}</p>
+                      <p className="text-xs text-slate-400">
+                        {match.groupName} ·{" "}
+                        {dateFormatter.format(new Date(match.playedAt))}
+                      </p>
+                    </div>
+                    <div className={`font-semibold ${match.won ? "text-emerald-300" : "text-rose-300"}`}>
+                      {match.scored}-{match.conceded}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/40 p-4 text-sm text-slate-400">
+                  Nog geen activiteit om te tonen.
                 </div>
               )}
             </div>
@@ -659,428 +390,133 @@ export function DashboardPage() {
     );
   }
 
+  const currentPlayerMatchTitle = currentPlayer ? currentPlayer.player.name : "Jouw account";
+  const currentPlayerWinRate = currentPlayer ? `${Math.round(currentPlayer.winRate * 100)}%` : "—";
+  const currentPlayerStreak = currentPlayer ? currentPlayer.currentStreak : 0;
+  const currentPlayerBalance = currentPlayer
+    ? formatSigned(currentPlayer.pointDifferential)
+    : "—";
+
   return (
-    <div className="flex flex-col gap-8">
-      <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-5 shadow-card">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div className="space-y-3">
-              <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
-                Mijn groep
-              </p>
-              <h2 className="text-3xl font-semibold text-white">
-                Goed om je weer te zien, {currentPlayerLabel}.
-              </h2>
-              <p className="max-w-2xl text-sm text-slate-300">
-                {activeGroup
-                  ? `Je kijkt nu naar ${activeGroup.name}. Hier zie je jouw vorm, jouw groep en de laatste resultaten die echt tellen.`
-                  : "Je persoonlijke statistieken en groepsinzichten staan hier centraal."}
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                Actieve groep
-              </p>
-              <p className="mt-1 text-lg font-semibold text-white">
-                {activeGroup?.name ?? "Geen groep geselecteerd"}
-              </p>
-              <p className="text-xs text-slate-400">
-                Persoonlijk &amp; groepsgericht overzicht
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                Jouw score
-              </p>
-              <p className="mt-2 text-3xl font-semibold text-white">
-                {currentPlayer ? `${Math.round(currentPlayer.winRate * 100)}%` : "—"}
-              </p>
-              <p className="mt-1 text-sm text-slate-400">
-                Winrate in deze groep
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                Huidige reeks
-              </p>
-              <p className="mt-2 text-3xl font-semibold text-white">
-                {currentPlayer ? currentPlayer.currentStreak : "—"}
-              </p>
-              <p className="mt-1 text-sm text-slate-400">
-                Achter elkaar gewonnen
-              </p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                Saldo
-              </p>
-              <p className="mt-2 text-3xl font-semibold text-white">
-                {currentPlayer
-                  ? `${currentPlayer.pointDifferential >= 0 ? "+" : ""}${currentPlayer.pointDifferential}`
-                  : "—"}
-              </p>
-              <p className="mt-1 text-sm text-slate-400">
-                Punten voor minus tegen
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-5 shadow-card">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
-                Mijn laatste potjes
-              </p>
-              <h3 className="mt-2 text-xl font-semibold text-white">
-                Laatste vijf resultaten
-              </h3>
-            </div>
-            <span className="rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
-              Persoonlijk
-            </span>
-          </div>
-
-          <div className="mt-4 space-y-2">
-            {currentPlayer ? (
-              personalMatches.length ? (
-                personalMatches.map((match) => {
-                  const isPlayerOne = match.playerOneId === currentPlayer.player.id;
-                  const opponent = isPlayerOne ? match.playerTwo : match.playerOne;
-                  const scored = isPlayerOne
-                    ? match.playerOnePoints
-                    : match.playerTwoPoints;
-                  const conceded = isPlayerOne
-                    ? match.playerTwoPoints
-                    : match.playerOnePoints;
-                  const won = match.winnerId === currentPlayer.player.id;
-
-                  return (
-                    <div
-                      key={match.id}
-                      className="flex items-center justify-between rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm"
-                    >
-                      <div>
-                        <p className="font-medium text-white">
-                          {won ? "Gewonnen" : "Verloren"} tegen {opponent.name}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                          {new Date(match.playedAt).toLocaleDateString("nl-NL", {
-                            day: "2-digit",
-                            month: "short",
-                          })}{" "}
-                          · {match.season?.name ?? "Seizoen onbekend"}
-                        </p>
-                      </div>
-                      <div
-                        className={`text-sm font-semibold ${
-                          won ? "text-emerald-300" : "text-rose-300"
-                        }`}
-                      >
-                        {scored} - {conceded}
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/40 p-4 text-sm text-slate-400">
-                  Nog geen wedstrijden van jou gevonden in deze groep.
-                </div>
-              )
-            ) : (
-              <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/40 p-4 text-sm text-slate-400">
-                Je account is nog niet gekoppeld aan een speler in deze groep.
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="dashboard-stats-grid grid gap-4 md:grid-cols-3">
-        <div className="dashboard-stat-card rounded-2xl border border-white/10 bg-slate-950/40 p-4 md:p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs uppercase tracking-widest text-axoft-300">
-              Beste winrate
-            </span>
-            {stats.bestWinRate && (
-              <span className="rounded-full bg-axoft-500/15 px-2 py-0.5 text-xs font-medium text-axoft-200">
-                {animatedBestWinRate}%
-              </span>
-            )}
-          </div>
-          <h3 className="mt-2 md:mt-3 text-lg md:text-xl font-semibold text-white truncate">
-            {stats.bestWinRate ? stats.bestWinRate.player.name : "Nog onbekend"}
-          </h3>
-          <p className="mt-1 text-xs text-slate-400">
-            Winrate teller:{" "}
-            <span className="font-semibold text-axoft-200">
-              {stats.bestWinRate ? `${animatedBestWinRate}%` : "—"}
-            </span>
+    <div className="space-y-8">
+      <section className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+        <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-6 shadow-card">
+          <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
+            Mijn groep
+          </p>
+          <h2 className="mt-2 text-3xl font-semibold text-white">
+            {activeGroup.name}
+          </h2>
+          <p className="mt-3 max-w-2xl text-sm text-slate-300">
+            Hier zie je alleen de snelle samenvatting van de geselecteerde
+            groep. Voor standen en seizoenen ga je naar de aparte standenpagina.
           </p>
         </div>
-        <div className="dashboard-stat-card rounded-2xl border border-white/10 bg-slate-950/40 p-4 md:p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs uppercase tracking-widest text-axoft-300">
-              Meeste potjes
-            </span>
-            {stats.mostMatches && (
-              <span className="rounded-full bg-axoft-500/15 px-2 py-0.5 text-xs font-medium text-axoft-200">
-                {animatedMostMatches}×
-              </span>
-            )}
-          </div>
-          <h3 className="mt-2 md:mt-3 text-lg md:text-xl font-semibold text-white truncate">
-            {stats.mostMatches ? stats.mostMatches.player.name : "Nog onbekend"}
-          </h3>
-          <p className="mt-1 text-xs text-slate-400">
-            Potjes teller:{" "}
-            <span className="font-semibold text-axoft-200">
-              {stats.mostMatches ? `${animatedMostMatches}` : "—"}
-            </span>
+
+        <div className="rounded-3xl border border-white/10 bg-slate-950/50 p-6 shadow-card">
+          <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
+            Snelle acties
           </p>
-        </div>
-        <div className="dashboard-stat-card rounded-2xl border border-white/10 bg-slate-950/40 p-4 md:p-5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs uppercase tracking-widest text-axoft-300">
-              Beste saldo
-            </span>
-            {stats.bestDifferential && (
-              <span className="rounded-full bg-axoft-500/15 px-2 py-0.5 text-xs font-medium text-axoft-200">
-                {animatedBestDifferential >= 0 ? "+" : ""}
-                {animatedBestDifferential}
-              </span>
-            )}
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <Link
+              to="/matches"
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:border-axoft-400 hover:text-white"
+            >
+              Wedstrijden
+            </Link>
+            <Link
+              to="/standings"
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:border-axoft-400 hover:text-white"
+            >
+              Standen
+            </Link>
+            <Link
+              to="/doubles"
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:border-axoft-400 hover:text-white"
+            >
+              2v2
+            </Link>
+            <Link
+              to="/members"
+              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:border-axoft-400 hover:text-white"
+            >
+              Groepsbeheer
+            </Link>
           </div>
-          <h3 className="mt-2 md:mt-3 text-lg md:text-xl font-semibold text-white truncate">
-            {stats.bestDifferential
-              ? stats.bestDifferential.player.name
-              : "Nog onbekend"}
-          </h3>
-          <p className="mt-1 text-xs text-slate-400">
-            Saldo teller:{" "}
-            <span className="font-semibold text-axoft-200">
-              {stats.bestDifferential
-                ? `${animatedBestDifferential >= 0 ? "+" : ""}${animatedBestDifferential}`
-                : "—"}
-            </span>
-          </p>
         </div>
       </section>
 
-      {/* <section className="glass-card rounded-2xl border border-white/10 bg-slate-950/45 p-5 md:p-6">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-axoft-200/80">
-              Live feed
-            </p>
-            <h2 className="mt-2 text-lg font-semibold text-white">
-              Achievement feed
-            </h2>
-            <p className="text-sm text-slate-400">
-              Recente mijlpalen, upset wins en opvallende momenten.
-            </p>
-          </div>
-          <span className="rounded-full border border-white/10 bg-slate-900/70 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-300">
-            Laatste 8
-          </span>
-        </div>
-
-        {!achievementEvents.length ? (
-          <div className="mt-4 rounded-xl border border-dashed border-white/15 bg-slate-950/30 p-4 text-sm text-slate-400">
-            Nog geen achievement events. Speel meer wedstrijden om de feed te vullen.
-          </div>
-        ) : (
-          <ol className="mt-4 grid gap-2">
-            {achievementEvents.map((event) => {
-              const toneClass =
-                event.tone === "emerald"
-                  ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100"
-                  : event.tone === "amber"
-                    ? "border-amber-400/30 bg-amber-500/10 text-amber-100"
-                    : event.tone === "rose"
-                      ? "border-rose-400/30 bg-rose-500/10 text-rose-100"
-                      : "border-axoft-400/30 bg-axoft-500/10 text-axoft-100";
-
-              return (
-                <li
-                  key={event.id}
-                  className={`rounded-xl border p-3 ${toneClass}`}
-                >
-                  <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-                    <p className="text-sm font-semibold">{event.title}</p>
-                    <p className="text-[11px] uppercase tracking-[0.25em] opacity-90">
-                      {new Date(event.at).toLocaleDateString("nl-NL", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </p>
-                  </div>
-                  <p className="mt-1 text-xs opacity-90">{event.detail}</p>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </section> */}
-
-      <div className="md:hidden">
-        <details className="glass-card rounded-xl p-4" open>
-          <summary className="cursor-pointer text-lg font-semibold text-white">
-            Laatste resultaten
-          </summary>
-          <div className="mt-4">
-            <MatchesTable matches={recentMatches} contextMatches={matches} />
-          </div>
-        </details>
-      </div>
-
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,60%),minmax(0,40%)]">
-        <div className="space-y-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-white">Klassement</h2>
-              <p className="text-sm text-slate-400">{scopeDescription}</p>
-            </div>
-            <label className="flex flex-col gap-1 text-xs uppercase tracking-widest text-axoft-200 sm:flex-row sm:items-center">
-              <span>Bekijk</span>
-              <select
-                className="rounded-lg border border-white/10 bg-slate-900/70 px-3 py-2 text-sm text-white outline-none focus:border-axoft-400 focus:ring-2 focus:ring-axoft-400/40"
-                value={selectValue}
-                onChange={handleScopeChange}
-              >
-                {seasons.map((season) => (
-                  <option key={season.id} value={season.id}>
-                    {season.id === currentSeasonId
-                      ? `${season.name} (huidig)`
-                      : season.name}
-                  </option>
-                ))}
-                <option value="overall">Totaal (alle seizoenen)</option>
-              </select>
-            </label>
-          </div>
-          <Leaderboard entries={leaderboardEntries} />
-        </div>
-        <div className="hidden md:block space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold text-white">
-              Laatste resultaten
-            </h2>
-            <MatchesTable matches={recentMatches} contextMatches={matches} />
-          </div>
-          {seasonHighlight ? (
-            <SeasonHighlightCard
-              match={seasonHighlight.match}
-              subtitle={`Meeste punten (${seasonHighlight.total} totaal)`}
-            />
-          ) : null}
-          <BadgeLegend />
-        </div>
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <DashboardCard
+          label="Winrate"
+          value={currentPlayerWinRate}
+          detail={`${currentPlayerMatchTitle} in deze groep`}
+        />
+        <DashboardCard
+          label="Streak"
+          value={currentPlayer ? currentPlayerStreak : "—"}
+          detail="Achter elkaar gewonnen"
+        />
+        <DashboardCard
+          label="Saldo"
+          value={currentPlayerBalance}
+          detail="Punten voor minus tegen"
+        />
+        <DashboardCard
+          label="Leden"
+          value={groupMembers.length}
+          detail="In de geselecteerde groep"
+        />
       </section>
 
-      <section className="space-y-4">
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-white">
-              2v2 leaderboard
-            </h2>
-            <p className="text-sm text-slate-400">
-              {selectedScope === "overall"
-                ? "Alle 2v2-wedstrijden"
-                : `2v2 in ${selectedSeason?.name ?? "het gekozen seizoen"}`}
-              . {doublesSummary.matches} 2v2-potjes, {doublesSummary.activePlayers} spelers en{" "}
-              {doublesSummary.activeTeams} duo&apos;s actief.
-            </p>
-          </div>
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-2">
-          <DoublesLeaderboardTable
-            title="Beste doubles spelers"
-            description="Individuele prestaties in teamwedstrijden."
-            rows={doublesPlayerLeaderboard.map((entry) => ({
-              id: entry.player.id,
-              label: entry.player.name,
-              rating: entry.rating,
-              wins: entry.wins,
-              losses: entry.losses,
-              matches: entry.matches,
-              pointsFor: entry.pointsFor,
-              pointsAgainst: entry.pointsAgainst,
-              winRate: entry.winRate,
-              pointDifferential: entry.pointDifferential,
-            }))}
-            emptyMessage="Nog geen 2v2-resultaten in deze scope."
-          />
-          <DoublesLeaderboardTable
-            title="Beste duo's"
-            description="Koppels die samen het meeste rendement halen."
-            rows={doublesTeamLeaderboard.map((entry) => ({
-              id: entry.id,
-              label: entry.label,
-              subLabel: `${entry.players[0].name} + ${entry.players[1].name}`,
-              rating: entry.rating,
-              wins: entry.wins,
-              losses: entry.losses,
-              matches: entry.matches,
-              pointsFor: entry.pointsFor,
-              pointsAgainst: entry.pointsAgainst,
-              winRate: entry.winRate,
-              pointDifferential: entry.pointDifferential,
-            }))}
-            emptyMessage="Nog geen duo's om te ranken."
-          />
-        </div>
+      <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+        <MatchMiniList
+          title="1v1"
+          moreTo="/matches"
+          emptyText="Nog geen 1v1-potjes gevonden voor deze groep."
+          items={personalSingles.map((match) => {
+            const isPlayerOne = match.playerOneId === currentPlayer?.player.id;
+            const opponent = isPlayerOne ? match.playerTwo : match.playerOne;
+            const scored = isPlayerOne ? match.playerOnePoints : match.playerTwoPoints;
+            const conceded = isPlayerOne
+              ? match.playerTwoPoints
+              : match.playerOnePoints;
+            return {
+              id: match.id,
+              title: `Tegen ${opponent.name}`,
+              subtitle: `${match.season?.name ?? "Seizoen onbekend"} · ${dateFormatter.format(
+                new Date(match.playedAt),
+              )}`,
+              score: `${scored}-${conceded}`,
+              won: match.winnerId === currentPlayer?.player.id,
+            };
+          })}
+        />
+        <MatchMiniList
+          title="2v2"
+          moreTo="/doubles"
+          emptyText="Nog geen 2v2-potjes gevonden voor deze groep."
+          items={personalDoubles.map((match) => {
+            const teamOneNames = [match.teamOnePlayerA.name, match.teamOnePlayerB.name];
+            const teamTwoNames = [match.teamTwoPlayerA.name, match.teamTwoPlayerB.name];
+            const isTeamOne = [
+              match.teamOnePlayerAId,
+              match.teamOnePlayerBId,
+            ].includes(currentPlayer?.player.id ?? -1);
+            const scored = isTeamOne ? match.teamOnePoints : match.teamTwoPoints;
+            const conceded = isTeamOne ? match.teamTwoPoints : match.teamOnePoints;
+            return {
+              id: match.id,
+              title: `${teamOneNames.join(" + ")} vs ${teamTwoNames.join(" + ")}`,
+              subtitle: `${match.season?.name ?? "Seizoen onbekend"} · ${dateFormatter.format(
+                new Date(match.playedAt),
+              )}`,
+              score: `${scored}-${conceded}`,
+              won: match.winnerTeam === (isTeamOne ? 1 : 2),
+            };
+          })}
+        />
       </section>
-
-      <div className="md:hidden">
-        <details className="glass-card rounded-xl p-4">
-          <summary className="cursor-pointer text-lg font-semibold text-white">
-            Seizoensoverzicht
-          </summary>
-          <div className="mt-4">
-            <SeasonOverview
-              seasons={seasons}
-              currentSeasonId={currentSeasonId}
-            />
-          </div>
-        </details>
-      </div>
-
-      <div className="hidden md:block">
-        <SeasonOverview seasons={seasons} currentSeasonId={currentSeasonId} />
-      </div>
-
-      {seasonHighlight ? (
-        <div className="md:hidden">
-          <details className="glass-card rounded-xl p-4">
-            <summary className="cursor-pointer text-lg font-semibold text-white">
-              Match van het seizoen
-            </summary>
-            <div className="mt-4">
-              <SeasonHighlightCard
-                match={seasonHighlight.match}
-                subtitle={`Meeste punten (${seasonHighlight.total} totaal)`}
-              />
-            </div>
-          </details>
-        </div>
-      ) : null}
-
-      <div className="md:hidden">
-        <details className="glass-card rounded-xl p-4">
-          <summary className="cursor-pointer text-lg font-semibold text-white">
-            Badges uitgelegd
-          </summary>
-          <div className="mt-4">
-            <BadgeLegend />
-          </div>
-        </details>
-      </div>
     </div>
   );
 }
