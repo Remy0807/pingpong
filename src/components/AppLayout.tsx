@@ -476,7 +476,7 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 lg:h-screen lg:overflow-hidden">
-      <div className="mx-auto max-w-[1600px] lg:grid lg:h-screen lg:grid-cols-[280px_minmax(0,1fr)]">
+      <div className="grid h-full w-full lg:grid-cols-[280px_minmax(0,1fr)]">
         <button
           type="button"
           onClick={() => setMobileNavOpen(true)}
