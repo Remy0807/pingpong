@@ -21,6 +21,9 @@ export function StandingsPage() {
   const [selectedScope, setSelectedScope] = useState<"overall" | number>(
     "overall",
   );
+  const [selectedLeaderboard, setSelectedLeaderboard] = useState<
+    "singles" | "doubles"
+  >("singles");
 
   useEffect(() => {
     if (currentSeasonId != null) {
@@ -149,6 +152,9 @@ export function StandingsPage() {
       ? "Totaal over alle seizoenen"
       : selectedSeason?.name ?? "Seizoen";
 
+  const singlesMatchCount =
+    selectedScope === "overall" ? matches.length : selectedSeason?.matches ?? 0;
+
   if (!activeGroup) {
     return (
       <div className="space-y-6">
@@ -193,7 +199,34 @@ export function StandingsPage() {
                 dashboard blijft daardoor rustig en snel.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex flex-col gap-1 text-xs uppercase tracking-widest text-axoft-200">
+                <span>Stand</span>
+                <div className="inline-flex rounded-lg border border-white/10 bg-slate-900/70 p-1">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLeaderboard("singles")}
+                    className={`rounded-md px-3 py-1.5 text-sm font-semibold normal-case tracking-normal transition ${
+                      selectedLeaderboard === "singles"
+                        ? "bg-axoft-500 text-slate-950"
+                        : "text-slate-300 hover:bg-white/5 hover:text-white"
+                    }`}
+                  >
+                    1v1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedLeaderboard("doubles")}
+                    className={`rounded-md px-3 py-1.5 text-sm font-semibold normal-case tracking-normal transition ${
+                      selectedLeaderboard === "doubles"
+                        ? "bg-axoft-500 text-slate-950"
+                        : "text-slate-300 hover:bg-white/5 hover:text-white"
+                    }`}
+                  >
+                    2v2
+                  </button>
+                </div>
+              </div>
               <label className="flex flex-col gap-1 text-xs uppercase tracking-widest text-axoft-200">
                 <span>Periode</span>
                 <select
@@ -228,81 +261,83 @@ export function StandingsPage() {
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
               <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                1v1 spelers
+                {selectedLeaderboard === "singles" ? "1v1 spelers" : "2v2 spelers"}
               </p>
               <p className="mt-2 text-3xl font-semibold text-white">
-                {leaderboardEntries.length}
+                {selectedLeaderboard === "singles"
+                  ? leaderboardEntries.length
+                  : doublesSummary.activePlayers}
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
               <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                2v2 spelers
+                {selectedLeaderboard === "singles" ? "1v1 potjes" : "2v2 potjes"}
               </p>
               <p className="mt-2 text-3xl font-semibold text-white">
-                {doublesSummary.activePlayers}
+                {selectedLeaderboard === "singles"
+                  ? singlesMatchCount
+                  : doublesSummary.matches}
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
               <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
-                2v2 duo's
+                {selectedLeaderboard === "singles" ? "Scope" : "2v2 duo's"}
               </p>
-              <p className="mt-2 text-3xl font-semibold text-white">
-                {doublesSummary.activeTeams}
+              <p
+                className={`mt-2 font-semibold text-white ${
+                  selectedLeaderboard === "singles" ? "text-xl" : "text-3xl"
+                }`}
+              >
+                {selectedLeaderboard === "singles"
+                  ? scopeLabel
+                  : doublesSummary.activeTeams}
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-2">
+      {selectedLeaderboard === "singles" ? (
         <Leaderboard entries={leaderboardEntries} />
-        <DoublesLeaderboardTable
-          title="2v2 spelers"
-          description={`Individuele prestaties in ${scopeLabel}.`}
-          rows={doublesPlayerLeaderboard.map((entry) => ({
-            id: entry.player.id,
-            label: entry.player.name,
-            rating: entry.rating,
-            wins: entry.wins,
-            losses: entry.losses,
-            matches: entry.matches,
-            pointsFor: entry.pointsFor,
-            pointsAgainst: entry.pointsAgainst,
-            winRate: entry.winRate,
-            pointDifferential: entry.pointDifferential,
-          }))}
-          emptyMessage="Nog geen 2v2-resultaten in deze scope."
-        />
-      </section>
-
-      <section className="space-y-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.4em] text-axoft-200">
-            Duo's
-          </p>
-          <h3 className="mt-2 text-xl font-semibold text-white">
-            Beste vaste koppels
-          </h3>
-        </div>
-        <DoublesLeaderboardTable
-          title="Duo leaderboard"
-          description={`De sterkste vaste duo's in ${scopeLabel}.`}
-          rows={doublesTeamLeaderboard.map((entry) => ({
-            id: entry.id,
-            label: entry.label,
-            subLabel: `${entry.players[0].name} + ${entry.players[1].name}`,
-            rating: entry.rating,
-            wins: entry.wins,
-            losses: entry.losses,
-            matches: entry.matches,
-            pointsFor: entry.pointsFor,
-            pointsAgainst: entry.pointsAgainst,
-            winRate: entry.winRate,
-            pointDifferential: entry.pointDifferential,
-          }))}
-          emptyMessage="Nog geen duo's om te tonen."
-        />
-      </section>
+      ) : (
+        <section className="grid gap-6 xl:grid-cols-2">
+          <DoublesLeaderboardTable
+            title="2v2 spelers"
+            description={`Individuele prestaties in ${scopeLabel}.`}
+            rows={doublesPlayerLeaderboard.map((entry) => ({
+              id: entry.player.id,
+              label: entry.player.name,
+              rating: entry.rating,
+              wins: entry.wins,
+              losses: entry.losses,
+              matches: entry.matches,
+              pointsFor: entry.pointsFor,
+              pointsAgainst: entry.pointsAgainst,
+              winRate: entry.winRate,
+              pointDifferential: entry.pointDifferential,
+            }))}
+            emptyMessage="Nog geen 2v2-resultaten in deze scope."
+          />
+          <DoublesLeaderboardTable
+            title="Duo leaderboard"
+            description={`De sterkste vaste duo's in ${scopeLabel}.`}
+            rows={doublesTeamLeaderboard.map((entry) => ({
+              id: entry.id,
+              label: entry.label,
+              subLabel: `${entry.players[0].name} + ${entry.players[1].name}`,
+              rating: entry.rating,
+              wins: entry.wins,
+              losses: entry.losses,
+              matches: entry.matches,
+              pointsFor: entry.pointsFor,
+              pointsAgainst: entry.pointsAgainst,
+              winRate: entry.winRate,
+              pointDifferential: entry.pointDifferential,
+            }))}
+            emptyMessage="Nog geen duo's om te tonen."
+          />
+        </section>
+      )}
 
       <SeasonOverview seasons={seasons} currentSeasonId={currentSeasonId} />
     </div>
